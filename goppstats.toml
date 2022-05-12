@@ -1,0 +1,50 @@
+[global]
+# Parameters specified on the command line will supersede the parameters
+# in this section.
+# pid_file: /var/run/isi_data_insights_d.pid
+# log_file: /var/run/isi_data_insights_d.log
+# default log_level is INFO
+# log_level = "DEBUG"
+stats_processor = "influxdb_plugin"
+# stats_processor = "discard_plugin"
+# Use "auth" as the 4th arg in order to be prompted for the
+# InfluxDB username and password stats_processor_args, example:
+# localhost 8086 isi_data_insights auth
+stats_processor_args = [ "localhost", "8086", "isi_data_insights" ]
+# stats_processor_args = []
+
+# Alternative back end for testing
+# stat_processor = "discard_plugin"
+stat_processor_args = []
+
+# If set to 0 or -1, authentication will be retried indefintely
+# There is still an exponential backoff that is clamped to a maximum of
+# 30 minutes.
+# Default is still 8 retries. Uncomment the following line to retry forever
+# max_retries = 0
+
+# The min_update_interval_override param provides ability to override the
+# minimum interval that the daemon will query for a set of stats. The purpose
+# of the minimum interval, which defaults to 30 seconds, is to prevent
+# the daemon's queries from putting too much stress on the cluster.
+# The default value is 30 seconds.
+#
+# The most-frequent stat update interval is 5 seconds and that does not seem to
+# present excessive load in internal testing, so set that here.
+min_update_interval_override = 5
+
+# clusters in this section are queried for all stat groups
+# clusters: [username1:password1@]<ip-or-host-address1>[:True|False]
+#	[[username2:password2]@<ip-or-host-address2>[:True|False]]
+#	[[username3:password3]@<ip-or-host-address3>[:True|False]]
+#	...
+# If you don't specify the username and password then you will be prompted
+# for them when the daemon starts up.
+# Use the optional True or False on the end to specify whether the cluster's
+# SSL certificate should be verified. If it is omitted then the default is
+# False (i.e. don't verify SSL cert).
+[[cluster]]
+hostname = "cse-sea-h500-1.west.isilon.com"
+username = "root"
+password = "a"
+verify-ssl = false
