@@ -1,6 +1,6 @@
-# Gostats
+# Goppstats
 
-Gostats is a tool that can be used to query multiple OneFS clusters for statistics data via Isilon's OneFS API (PAPI). It uses a pluggable backend module for processing the results of those queries. The provided stat processor, defined in influxdb.go, sends query results to an InfluxDB backend. The backend interface type is defined in statssink.go. The Grafana dashboards provided with the data insights project may be used without modification with the Go version of the collector.
+Goppstats is a tool that can be used to query multiple OneFS clusters for partitioned performance workoad statistics data via Isilon's OneFS API (PAPI). It uses a pluggable backend module for processing the results of those queries. The provided stat processor, defined in influxdb.go, sends query results to an InfluxDB backend. The backend interface type is defined in statssink.go. The partitioned performance workload data is available in the TSDB under the "cluster.performance.dataset.N" keys.
 
 ## Installation Instructions
 
@@ -8,9 +8,9 @@ Gostats is a tool that can be used to query multiple OneFS clusters for statisti
 
 ## Run Instructions
 
-* Rename or copy the example configuration file, example_isi_data_insights_d.toml to idic.toml. The path ./idic.toml is the default configuration file path for the Go version of the connector. If you use that name and run the connector from the source directory then you don't have to use the -config-file parameter to specify a different configuration file.
-* Next edit the idic.toml file so that it is set up to query the set of Isilon OneFS clusters that you want to monitor. Do this by modifying and replicating the cluster config section.
-* The example configuration file is configured to send several sets of stats to InfluxDB via the influxdb.go backend. If you intend to use the default backend, you will need to install InfluxDB. InfluxDB can be installed locally (i.e on the same system as the connector) or remotely (i.e. on a different system).
+* The configuration file for `gostats` can also be used by goppstats. If you do not already have a gostats configuration, rename or copy the example configuration file, example_isi_data_insights_d.toml to goppstats.toml. The path ./goppstats.toml is the default configuration file path for the Go version of the connector. If you use that name and run the connector from the source directory then you don't have to use the -config-file parameter to specify a different configuration file.
+* Next edit the goppstats.toml file so that it is set up to query the set of Isilon OneFS clusters that you want to monitor. Do this by modifying and replicating the cluster config section.
+* The example configuration file is configured to send statisticss to InfluxDB via the influxdb.go backend. If you intend to use the default backend, you will need to install InfluxDB. InfluxDB can be installed locally (i.e on the same system as the connector) or remotely (i.e. on a different system).
 
     ```sh
     sudo apt-get install influxdb
@@ -20,7 +20,7 @@ Gostats is a tool that can be used to query multiple OneFS clusters for statisti
 * To run the connector:
 
     ```sh
-    ./gostats
+    ./goppstats
     ```
 
 ## Customizing the connector
