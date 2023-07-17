@@ -143,7 +143,7 @@ func statsloop(cluster clusterConf, gc globalConfig) {
 		return
 	}
 
-	// divide stats into buckets based on update interval
+	// get partitioned-performance dataset configuration
 	log.Infof("Querying PP stat data sets for cluster %s", c.ClusterName)
 	di, err := c.GetDataSetInfo()
 	if err != nil {

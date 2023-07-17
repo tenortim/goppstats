@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
@@ -117,7 +116,6 @@ type PPWorkloadQuery struct {
 
 const sessionPath = "/session/1/session"
 const configPath = "/platform/1/cluster/config"
-const statsPath = "/platform/1/statistics/current"
 const dsPath = "/platform/10/performance/datasets"
 const ppWorkloadPath = "/platform/10/statistics/summary/workload"
 
@@ -217,7 +215,7 @@ func (c *Cluster) Authenticate() error {
 		return fmt.Errorf("Authenticate: unable to parse auth response - %s", err)
 	}
 	// drain any other output
-	io.Copy(ioutil.Discard, resp.Body)
+	io.Copy(io.Discard, resp.Body)
 	var timeout int
 	ta, ok := ar["timeout_absolute"]
 	if ok {
@@ -421,7 +419,7 @@ func (c *Cluster) restGet(endpoint string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("Cluster %v returned unexpected HTTP response: %v", c.ClusterName, resp.Status)
 	}
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	return body, err
 }
 

@@ -187,12 +187,3 @@ func (s *InfluxDBSink) TagsForPPStat(ppstat PPStatResult) ptTags {
 	}
 	return tags
 }
-
-// helper function
-func ptmapCopy(tags ptTags) ptTags {
-	copy := ptTags{}
-	for k, v := range tags {
-		copy[k] = v
-	}
-	return copy
-}
