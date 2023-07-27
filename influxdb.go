@@ -15,10 +15,6 @@ type InfluxDBSink struct {
 	bpConfig client.BatchPointsConfig
 }
 
-// types for the decoded fields and tags
-type ptFields map[string]interface{}
-type ptTags map[string]string
-
 // GetInfluxDBWriter returns an InfluxDB DBWriter
 func GetInfluxDBWriter() DBWriter {
 	return &InfluxDBSink{}
@@ -26,7 +22,7 @@ func GetInfluxDBWriter() DBWriter {
 
 // Init initializes an InfluxDBSink so that points can be written
 // The array of argument strings comprises host, port, database
-func (s *InfluxDBSink) Init(cluster string, args []string) error {
+func (s *InfluxDBSink) Init(cluster clusterConf, args []string) error {
 	var username, password string
 	authenticated := false
 	// args are host, port, database, and, optionally, username and password
@@ -39,7 +35,7 @@ func (s *InfluxDBSink) Init(cluster string, args []string) error {
 		return fmt.Errorf("InfluxDB Init() wrong number of args %d - expected 3", len(args))
 	}
 
-	s.cluster = cluster
+	s.cluster = cluster.Hostname
 	host, port, database := args[0], args[1], args[2]
 	if authenticated {
 		username = args[3]
@@ -64,8 +60,14 @@ func (s *InfluxDBSink) Init(cluster string, args []string) error {
 	return nil
 }
 
+// UpdatesDatasets updates the back end view of the curren dataset definitions
+func (s *InfluxDBSink) UpdateDatasets(di *DsInfo) {
+	// currently, do nothing
+}
+
 // WriteStats takes an array of StatResults and writes them to InfluxDB
-func (s *InfluxDBSink) WritePPStats(keyName string, ppstats []PPStatResult) error {
+func (s *InfluxDBSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) error {
+	keyName := ds.StatKey
 	log.Infof("WritePPStats called for %d points", len(ppstats))
 
 	bp, err := client.NewBatchPoints(s.bpConfig)
@@ -73,10 +75,10 @@ func (s *InfluxDBSink) WritePPStats(keyName string, ppstats []PPStatResult) erro
 		return fmt.Errorf("unable to create InfluxDB batch points - %v", err.Error())
 	}
 	for _, ppstat := range ppstats {
-		fields := s.FieldsForPPStat(ppstat)
+		fields := fieldsForPPStat(ppstat)
 		log.Debugf("got fields: %+v\n", fields)
 
-		tags := s.TagsForPPStat(ppstat)
+		tags := tagsForPPStat(ppstat)
 		tags["cluster"] = s.cluster
 		tags["node"] = strconv.Itoa(ppstat.Node)
 		log.Debugf("got tags: %+v\n", tags)
@@ -98,92 +100,4 @@ func (s *InfluxDBSink) WritePPStats(keyName string, ppstats []PPStatResult) erro
 		return fmt.Errorf("failed to write batch of points - %v", err.Error())
 	}
 	return nil
-}
-
-func (s *InfluxDBSink) FieldsForPPStat(ppstat PPStatResult) ptFields {
-	fields := make(ptFields)
-
-	// Required fields
-	fields["bytes_in"] = ppstat.BytesIn
-	fields["bytes_out"] = ppstat.BytesOut
-	fields["reads"] = ppstat.Reads
-	fields["writes"] = ppstat.Writes
-	fields["ops"] = ppstat.Ops
-	fields["l2"] = ppstat.L2
-	fields["l3"] = ppstat.L3
-	fields["cpu"] = ppstat.CPU
-	fields["latency_read"] = ppstat.LatencyRead
-	fields["latency_write"] = ppstat.LatencyWrite
-	fields["latency_other"] = ppstat.LatencyOther
-
-	return fields
-}
-
-func (s *InfluxDBSink) TagsForPPStat(ppstat PPStatResult) ptTags {
-	tags := make(ptTags)
-	// Optional fields
-	if ppstat.Username != nil {
-		tags["username"] = *ppstat.Username
-	}
-	if ppstat.Protocol != nil {
-		tags["protocol"] = *ppstat.Protocol
-	}
-	if ppstat.ShareName != nil {
-		tags["share_name"] = *ppstat.ShareName
-	}
-	if ppstat.JobType != nil {
-		tags["job_type"] = *ppstat.JobType
-	}
-	if ppstat.GroupName != nil {
-		tags["group_name"] = *ppstat.GroupName
-	}
-	if ppstat.Path != nil {
-		tags["path"] = *ppstat.Path
-	}
-	if ppstat.ZoneName != nil {
-		tags["zone_name"] = *ppstat.ZoneName
-	}
-	if ppstat.DomainID != nil {
-		tags["domain_id"] = *ppstat.DomainID
-	}
-	if ppstat.ExportID != nil {
-		tags["export_id"] = strconv.Itoa(*ppstat.ExportID)
-	}
-	if ppstat.UserID != nil {
-		tags["user_id"] = strconv.Itoa(*ppstat.UserID)
-	}
-	if ppstat.LocalAddress != nil {
-		tags["local_address"] = *ppstat.LocalAddress
-	}
-	if ppstat.UserSid != nil {
-		tags["user_sid"] = *ppstat.UserSid
-	}
-	if ppstat.RemoteAddress != nil {
-		tags["remote_address"] = *ppstat.RemoteAddress
-	}
-	if ppstat.WorkloadType != nil {
-		tags["workload_type"] = *ppstat.WorkloadType
-	}
-	if ppstat.GroupSid != nil {
-		tags["group_sid"] = *ppstat.GroupSid
-	}
-	if ppstat.RemoteName != nil {
-		tags["remote_name"] = *ppstat.RemoteName
-	}
-	if ppstat.SystemName != nil {
-		tags["system_name"] = *ppstat.SystemName
-	}
-	if ppstat.ZoneID != nil {
-		tags["zone_id"] = strconv.Itoa(*ppstat.ZoneID)
-	}
-	if ppstat.WorkloadID != nil {
-		tags["workload_id"] = strconv.Itoa(*ppstat.WorkloadID)
-	}
-	if ppstat.LocalName != nil {
-		tags["local_name"] = *ppstat.LocalName
-	}
-	if ppstat.GroupID != nil {
-		tags["group_id"] = strconv.Itoa(*ppstat.GroupID)
-	}
-	return tags
 }

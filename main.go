@@ -11,7 +11,7 @@ import (
 )
 
 // Version is the released program version
-const Version = "0.01"
+const Version = "0.10"
 const userAgent = "goppstats/" + Version
 
 const PPSampleRate = 30 // Only poll once every 30s
@@ -137,22 +137,10 @@ func statsloop(cluster clusterConf, gc globalConfig) {
 		log.Error(err)
 		return
 	}
-	err = ss.Init(c.ClusterName, gc.ProcessorArgs)
+	err = ss.Init(cluster, gc.ProcessorArgs)
 	if err != nil {
 		log.Errorf("Unable to initialize %s plugin: %v", gc.Processor, err)
 		return
-	}
-
-	// get partitioned-performance dataset configuration
-	log.Infof("Querying PP stat data sets for cluster %s", c.ClusterName)
-	di, err := c.GetDataSetInfo()
-	if err != nil {
-		log.Errorf("Unable to retrieve data set information for cluster %s - %s - bailing", c.ClusterName, err)
-		return
-	}
-	log.Infof("Got %d data set definitions\n", di.Total)
-	for i, entry := range di.Datasets {
-		fmt.Printf("Entry %d: name: %s, statkey: %s\n", i, entry.Name, entry.StatKey)
 	}
 
 	// loop collecting and pushing stats
@@ -160,6 +148,19 @@ func statsloop(cluster clusterConf, gc globalConfig) {
 	for {
 		curTime := time.Now()
 		nextTime := curTime.Add(time.Second * PPSampleRate)
+
+		// Grab current dataset definitions
+		log.Infof("Querying initial PP stat datasets for cluster %s", c.ClusterName)
+		di, err := c.GetDataSetInfo()
+		if err != nil {
+			log.Errorf("Unable to retrieve dataset information for cluster %s - %s - bailing", c.ClusterName, err)
+			return
+		}
+		log.Infof("Got %d data set definitions\n", di.Total)
+		for i, entry := range di.Datasets {
+			log.Debugf("Entry %d: name: %s, statkey: %s\n", i, entry.Name, entry.StatKey)
+		}
+		ss.UpdateDatasets(di)
 
 		// Collect one set of stats
 		log.Infof("Cluster %s start collecting pp stats", c.ClusterName)
@@ -185,7 +186,7 @@ func statsloop(cluster clusterConf, gc globalConfig) {
 
 			log.Infof("Got %d workload entries", len(sr))
 			log.Infof("Cluster %s start writing stats to back end", c.ClusterName)
-			err = ss.WritePPStats(ds.StatKey, sr)
+			err = ss.WritePPStats(ds, sr)
 			if err != nil {
 				// TODO maybe implement backoff/error-handling here?
 				log.Errorf("Failed to write stats to database: %s", err)
@@ -203,10 +204,12 @@ func statsloop(cluster clusterConf, gc globalConfig) {
 // return a DBWriter for the given backend name
 func getDBWriter(sp string) (DBWriter, error) {
 	switch sp {
-	case "influxdb_plugin":
-		return GetInfluxDBWriter(), nil
 	case "discard_plugin":
 		return GetDiscardWriter(), nil
+	case "influxdb_plugin":
+		return GetInfluxDBWriter(), nil
+	case "prometheus_plugin":
+		return GetPrometheusWriter(), nil
 	default:
 		return nil, fmt.Errorf("unsupported backend plugin %q", sp)
 	}

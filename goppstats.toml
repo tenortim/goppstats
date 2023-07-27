@@ -22,14 +22,9 @@ stat_processor_args = []
 # max_retries = 0
 
 # The min_update_interval_override param provides ability to override the
-# minimum interval that the daemon will query for a set of stats. The purpose
-# of the minimum interval, which defaults to 30 seconds, is to prevent
-# the daemon's queries from putting too much stress on the cluster.
-# The default value is 30 seconds.
-#
-# The most-frequent stat update interval is 5 seconds and that does not seem to
-# present excessive load in internal testing, so set that here.
-min_update_interval_override = 5
+# minimum interval that the daemon will query for the partitioned performance
+# stats. This value can be increased if desired.
+min_update_interval_override = 30
 
 # clusters in this section are queried for all stat groups
 # clusters: [username1:password1@]<ip-or-host-address1>[:True|False]

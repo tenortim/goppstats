@@ -20,7 +20,6 @@ const defaultMaxRetries = 8
 type tomlConfig struct {
 	Global   globalConfig
 	Clusters []clusterConf `toml:"cluster"`
-	// StatGroups []statGroupConf `toml:"statgroup"`
 }
 
 type globalConfig struct {
@@ -32,12 +31,13 @@ type globalConfig struct {
 }
 
 type clusterConf struct {
-	Hostname string
-	Username string
-	Password string
-	AuthType string
-	SSLCheck bool `toml:"verify-ssl"`
-	Disabled bool
+	Hostname       string  // cluster name/ip; ideally use a SmartConnect name
+	Username       string  // account with the appropriate PAPI roles
+	Password       string  // password for the account
+	AuthType       string  // authentication type: "session" or "basic-auth"
+	SSLCheck       bool    `toml:"verify-ssl"` // turn on/off SSL cert checking to handle self-signed certificates
+	Disabled       bool    // if set, disable collection for this cluster
+	PrometheusPort *uint64 `toml:"prometheus_port"` // If using the Prometheus collector, define the listener port for the metrics handler
 }
 
 func mustReadConfig() tomlConfig {

@@ -22,6 +22,10 @@ import (
 // MaxAPIPathLen is the limit on the length of an API request URL
 const MaxAPIPathLen = 8198
 
+// For OneFS releases up to and including 9.6, the API supports the System
+// dataset (0), and up to four user-defined datasets
+const MaxDsId = 4
+
 // AuthInfo provides username and password to authenticate
 // against the OneFS API
 type AuthInfo struct {
@@ -302,8 +306,8 @@ func (c *Cluster) GetDataSetInfo() (*DsInfo, error) {
 	return &di, nil
 }
 
-// GetPPStats iterates over the Partitioned Performance data set and for each one, returns
-// array of PPStatResult structures
+// GetPPStats queries the API for the specified Partitioned Performance data set and returns
+// an array of PPStatResult structures representing that set
 func (c *Cluster) GetPPStats(dsName string) ([]PPStatResult, error) {
 	var results []PPStatResult
 
