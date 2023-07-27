@@ -10,15 +10,15 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// dsMap maps the dataset id (int) to the dataset information
-type dsMap map[int]promDsInternal
+// promDsMap maps the dataset id (int) to the Prometheus-specific dataset information
+type promDsMap map[int]promDsInternal
 
 // PrometheusSink defines the data to allow us talk to an Prometheus database
 type PrometheusSink struct {
 	cluster string
 	reg     prometheus.Registerer
 	port    uint64
-	dsm     dsMap
+	dsm     promDsMap
 }
 
 const NAMESPACE = "isilon"
@@ -176,7 +176,7 @@ func (s *PrometheusSink) ClearDataset(id int) {
 func (s *PrometheusSink) UpdateDatasets(di *DsInfo) {
 	if s.dsm == nil {
 		// First time through so allocate and set up the maps and gauges
-		s.dsm = make(dsMap)
+		s.dsm = make(promDsMap)
 		for _, ds := range di.Datasets {
 			s.CreateDataset(ds.Id, ds)
 		}
