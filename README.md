@@ -11,7 +11,7 @@ The partitioned performance workload data is available in the InfluxDB database 
 
 ## Run Instructions
 
-* The configuration file for `gostats` can also be used by goppstats. If you do not already have a gostats configuration, rename or copy the example configuration file, example_isi_data_insights_d.toml to goppstats.toml. The path ./goppstats.toml is the default configuration file path for the Go version of the connector. If you use that name and run the connector from the source directory then you don't have to use the -config-file parameter to specify a different configuration file.
+* The configuration file for `gostats` can also be used by goppstats. If you do not already have a gostats configuration, rename or copy the example configuration file, example_goppstats.toml to goppstats.toml. The path ./goppstats.toml is the default configuration file path for the Go version of the connector. If you use that name and run the connector from the source directory then you don't have to use the -config-file parameter to specify a different configuration file.
 * Edit the goppstats.toml file so that it is set up to query the set of Dell PowerScale OneFS clusters that you wish to monitor. Do this by modifying and replicating the cluster config section.
 * The example configuration file is configured to send partitioned-performance statistics to InfluxDB via the influxdb.go backend. If you intend to use the default backend, you will need to install InfluxDB. InfluxDB can be installed locally (i.e on the same system as the connector) or remotely (i.e. on a different system).
 
