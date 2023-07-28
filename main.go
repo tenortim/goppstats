@@ -11,7 +11,7 @@ import (
 )
 
 // Version is the released program version
-const Version = "0.10"
+const Version = "0.11"
 const userAgent = "goppstats/" + Version
 
 const PPSampleRate = 30 // Only poll once every 30s
@@ -100,29 +100,29 @@ func main() {
 	log.Notice("All collectors complete - exiting")
 }
 
-func statsloop(cluster clusterConf, gc globalConfig) {
+func statsloop(cluster_conf clusterConf, gc globalConfig) {
 	var err error
 	var ss DBWriter
 
 	// Connect to the cluster
-	authtype := cluster.AuthType
+	authtype := cluster_conf.AuthType
 	if authtype == "" {
-		log.Infof("No authentication type defined for cluster %s, defaulting to %s", cluster.Hostname, authtypeSession)
+		log.Infof("No authentication type defined for cluster %s, defaulting to %s", cluster_conf.Hostname, authtypeSession)
 		authtype = defaultAuthType
 	}
 	if authtype != authtypeSession && authtype != authtypeBasic {
-		log.Warningf("Invalid authentication type %q for cluster %s, using default of %s", authtype, cluster.Hostname, authtypeSession)
+		log.Warningf("Invalid authentication type %q for cluster %s, using default of %s", authtype, cluster_conf.Hostname, authtypeSession)
 		authtype = defaultAuthType
 	}
 	c := &Cluster{
 		AuthInfo: AuthInfo{
-			Username: cluster.Username,
-			Password: cluster.Password,
+			Username: cluster_conf.Username,
+			Password: cluster_conf.Password,
 		},
 		AuthType:   authtype,
-		Hostname:   cluster.Hostname,
+		Hostname:   cluster_conf.Hostname,
 		Port:       8080,
-		VerifySSL:  cluster.SSLCheck,
+		VerifySSL:  cluster_conf.SSLCheck,
 		maxRetries: gc.maxRetries,
 	}
 	if err = c.Connect(); err != nil {
@@ -137,7 +137,7 @@ func statsloop(cluster clusterConf, gc globalConfig) {
 		log.Error(err)
 		return
 	}
-	err = ss.Init(cluster, gc.ProcessorArgs)
+	err = ss.Init(c.ClusterName, cluster_conf, gc.ProcessorArgs)
 	if err != nil {
 		log.Errorf("Unable to initialize %s plugin: %v", gc.Processor, err)
 		return

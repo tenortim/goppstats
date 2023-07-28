@@ -47,10 +47,10 @@ The connector is designed to allow for customization via a plugin architecture. 
   * a function with signature
 
     ```go
-    func (s *InfluxDBSink) Init(cluster clusterConf, args []string) error
+    func (s *InfluxDBSink) Init(cluster string, cluster_conf clusterConf, args []string) error
     ```
 
-  that takes as input the name/ip-address of a cluster and a string array of backend-specific initialization parameters and initializes the receiver.
+  that takes as input the name/ip-address of a cluster, the cluster config definition, and a string array of backend-specific initialization parameters and initializes the receiver.
 
   * a function with signature
 

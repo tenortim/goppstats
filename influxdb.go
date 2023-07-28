@@ -22,7 +22,7 @@ func GetInfluxDBWriter() DBWriter {
 
 // Init initializes an InfluxDBSink so that points can be written
 // The array of argument strings comprises host, port, database
-func (s *InfluxDBSink) Init(cluster clusterConf, args []string) error {
+func (s *InfluxDBSink) Init(cluster string, _ clusterConf, args []string) error {
 	var username, password string
 	authenticated := false
 	// args are host, port, database, and, optionally, username and password
@@ -35,7 +35,7 @@ func (s *InfluxDBSink) Init(cluster clusterConf, args []string) error {
 		return fmt.Errorf("InfluxDB Init() wrong number of args %d - expected 3", len(args))
 	}
 
-	s.cluster = cluster.Hostname
+	s.cluster = cluster
 	host, port, database := args[0], args[1], args[2]
 	if authenticated {
 		username = args[3]

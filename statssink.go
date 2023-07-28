@@ -3,7 +3,7 @@ package main
 // DBWriter defines an interface to write OneFS stats to a persistent store/database
 type DBWriter interface {
 	// Initialize a statssink
-	Init(cluster clusterConf, args []string) error
+	Init(cluster string, cluster_conf clusterConf, args []string) error
 	// Update our current view of the defined datasets
 	UpdateDatasets(di *DsInfo)
 	// Write a stat to the sink
