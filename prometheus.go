@@ -114,14 +114,14 @@ func BasicAuth(handler http.HandlerFunc, username, password, realm string) http.
 func (s *PrometheusSink) Init(cluster string, cluster_conf clusterConf, args []string) error {
 	var username, password string
 	authenticated := false
-	// args are host, port, database, and, optionally, username and password
+	// args are either nothing, or, optionally, a username and password to support basic auth on the metrics endpoint
 	switch len(args) {
-	case 1:
+	case 0:
 		authenticated = false
-	case 3:
+	case 2:
 		authenticated = true
 	default:
-		return fmt.Errorf("prometheus Init() wrong number of args %d - expected 1 or 3", len(args))
+		return fmt.Errorf("prometheus Init() wrong number of args %d - expected 0 or 2", len(args))
 	}
 
 	s.cluster = cluster
