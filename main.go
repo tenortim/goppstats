@@ -11,7 +11,7 @@ import (
 )
 
 // Version is the released program version
-const Version = "0.13"
+const Version = "0.14"
 const userAgent = "goppstats/" + Version
 
 const PPSampleRate = 30 // Only poll once every 30s
@@ -21,6 +21,13 @@ const (
 	authtypeSession = "session"
 )
 const defaultAuthType = authtypeSession
+
+// Config file plugin names
+const (
+	DISCARD_PLUGIN_NAME = "discard_plugin"
+	INFLUX_PLUGIN_NAME  = "influxdb_plugin"
+	PROM_PLUGIN_NAME    = "prometheus_plugin"
+)
 
 var log = logging.MustGetLogger("goppstats")
 
@@ -80,6 +87,10 @@ func main() {
 	// read in our config
 	conf := mustReadConfig()
 	log.Info("Successfully read config file")
+
+	if conf.Global.Processor == PROM_PLUGIN_NAME && conf.PromSD.Enabled {
+		start_prom_sd_listener(conf)
+	}
 
 	// start collecting from each defined and enabled cluster
 	var wg sync.WaitGroup
@@ -204,11 +215,11 @@ func statsloop(cluster_conf clusterConf, gc globalConfig) {
 // return a DBWriter for the given backend name
 func getDBWriter(sp string) (DBWriter, error) {
 	switch sp {
-	case "discard_plugin":
+	case DISCARD_PLUGIN_NAME:
 		return GetDiscardWriter(), nil
-	case "influxdb_plugin":
+	case INFLUX_PLUGIN_NAME:
 		return GetInfluxDBWriter(), nil
-	case "prometheus_plugin":
+	case PROM_PLUGIN_NAME:
 		return GetPrometheusWriter(), nil
 	default:
 		return nil, fmt.Errorf("unsupported backend plugin %q", sp)

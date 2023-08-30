@@ -31,6 +31,12 @@ stats_processor_args = [ "localhost", "8086", "isi_data_insights" ]
 # The default value is 30 seconds.
 # min_update_interval_override = 30
 
+# If using prometheus, the collector supports the Prometheus "http SD" service
+# discovery mechanism.
+[prom_http_sd]
+enabled = false
+sd_port = 9999
+
 # clusters in this section are queried for all partitioned performance datasets
 # the collector checks the dataset definition each collection period and handles
 # additions, removals and definition changes without manual intervention
