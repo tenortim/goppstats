@@ -124,11 +124,11 @@ func (h *http_sd_conf) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if i != 0 {
 			listen_addrs += ", "
 		}
-		listen_addrs += fmt.Sprintf("%s:%d", h.ListenIP, port)
+		listen_addrs += fmt.Sprintf("\"%s:%d\"", h.ListenIP, port)
 	}
 	sdstr2 := `],
 		"labels": {
-			"__meta_prometheus_job": "isilon ppstats"
+			"__meta_prometheus_job": "isilon_ppstats"
 		}
 	}
 ]`
