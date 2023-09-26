@@ -2,7 +2,7 @@
 
 Goppstats is a tool that can be used to query multiple OneFS clusters for partitioned performance workoad statistics data via Isilon's OneFS API (PAPI). It uses a pluggable backend module for processing the results of those queries.
 The current version supports three backend types: [Influxdb](https://www.influxdata.com/), [Prometheus](https://prometheus.io/), and a no-op discard backend useful for testing.
-he InfluxDB backend sends query results to an InfluxDB server. The Prometheus backend spawns an http Web server per-cluster that serves the metrics via the "/metrics" endpoint.
+The InfluxDB backend sends query results to an InfluxDB server. The Prometheus backend spawns an http Web server per-cluster that serves the metrics via the "/metrics" endpoint.
 The partitioned performance workload data is available in the InfluxDB database under the "cluster.performance.dataset.N" keys and in Prometheus as metrics of the form: "isilon\_ppstat\_metric1{\_metric2}*{\_workload-type}\_field".
 
 ## Installation Instructions
@@ -13,11 +13,8 @@ The partitioned performance workload data is available in the InfluxDB database 
 
 * The configuration file for `gostats` can also be used by goppstats. If you do not already have a gostats configuration, rename or copy the example configuration file, example_goppstats.toml to goppstats.toml. The path ./goppstats.toml is the default configuration file path for the Go version of the connector. If you use that name and run the connector from the source directory then you don't have to use the -config-file parameter to specify a different configuration file.
 * Edit the goppstats.toml file so that it is set up to query the set of Dell PowerScale OneFS clusters that you wish to monitor. Do this by modifying and replicating the cluster config section.
-* The example configuration file is configured to send partitioned-performance statistics to InfluxDB via the influxdb.go backend. If you intend to use the default backend, you will need to install InfluxDB. InfluxDB can be installed locally (i.e on the same system as the connector) or remotely (i.e. on a different system).
+* The example configuration file is configured to send several sets of stats to InfluxDB via the influxdb.go backend. If you intend to use the default backend, you will need to install InfluxDB. InfluxDB can be installed locally (i.e on the same system as the connector) or remotely (i.e. on a different system). Follow the [install instructions](https://portal.influxdata.com/downloads/) but install "indluxdb" not "influxdb2"
 
-    ```sh
-    sudo apt-get install influxdb
-    ```
 
 * If you installed InfluxDB to somewhere other than localhost and/or port 8086, then you'll also need to update the configuration file with the address and port of the InfluxDB service.
 * To run the connector:
