@@ -42,6 +42,20 @@ func isValidWorkloadType(t string) bool {
 	return false
 }
 
+type exportMap struct {
+	enabled  bool
+	pathById map[int]string
+}
+
+func newExportMap(enabled bool) exportMap {
+	m := new(exportMap)
+	m.enabled = enabled
+	if enabled {
+		m.pathById = make(map[int]string)
+	}
+	return *m
+}
+
 // types for the decoded fields and tags
 type ptFields map[string]interface{}
 type ptTags map[string]string
@@ -71,12 +85,27 @@ func fieldsForPPStat(ppstat PPStatResult) ptFields {
 // match the original workload definition i.e.
 // export_id groupname local_address path protocol remote_address share_name username zone_name
 // squash some of the fields e.g. Username vs UserID vs UserSID
-func tagsForPPStat(ppstat PPStatResult) ptTags {
+func tagsForPPStat(ppstat PPStatResult, cluster *Cluster, exports exportMap) ptTags {
 	tags := make(ptTags)
 
 	// NFS export id
 	if ppstat.ExportID != nil {
-		tags["export_id"] = strconv.Itoa(*ppstat.ExportID)
+		id := *ppstat.ExportID
+		tags["export_id"] = strconv.Itoa(id)
+		if exports.enabled {
+			path, found := exports.pathById[id]
+			if !found {
+				var err error
+				path, err = cluster.GetExportPathById(id)
+				if err != nil {
+					log.Errorf("failed to lookup export id %d, %s", id, err)
+					path = "unknown (lookup failed)"
+				}
+				tags["export_path"] = path
+			} else {
+				tags["export_path"] = path
+			}
+		}
 	}
 
 	// associated group identity

@@ -122,6 +122,7 @@ const sessionPath = "/session/1/session"
 const configPath = "/platform/1/cluster/config"
 const dsPath = "/platform/10/performance/datasets"
 const ppWorkloadPath = "/platform/10/statistics/summary/workload"
+const exportPath = "/platform/1/protocols/nfs/exports"
 
 const maxTimeoutSecs = 1800 // clamp retry timeout to 30 minutes
 
@@ -304,6 +305,32 @@ func (c *Cluster) GetDataSetInfo() (*DsInfo, error) {
 		return nil, err
 	}
 	return &di, nil
+}
+
+// GetExportPathById returns the first defined path for the given NFS export id or an error
+func (c *Cluster) GetExportPathById(id int) (string, error) {
+	// We only care about the paths component here, so ignore the rest
+	var exports interface{}
+	url := fmt.Sprintf("%s/%d", exportPath, id)
+	log.Debugf("fetching export info from %s\n", url)
+	res, err := c.restGet(url)
+	if err != nil {
+		return "", err
+	}
+	err = json.Unmarshal(res, &exports)
+	if err != nil {
+		return "", err
+	}
+	ea1 := exports.(map[string]any)
+	ea2 := ea1["exports"].([]interface{})
+	export := ea2[0].(map[string]any)
+	paths := export["paths"]
+	if paths == nil {
+		return "", fmt.Errorf("no paths found for export id %d", id)
+	}
+	// Just return the first path, even if there are multiple
+	path := paths.([]interface{})[0]
+	return path.(string), nil
 }
 
 // GetPPStats queries the API for the specified Partitioned Performance data set and returns

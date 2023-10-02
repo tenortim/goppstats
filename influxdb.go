@@ -10,9 +10,11 @@ import (
 
 // InfluxDBSink defines the data to allow us talk to an InfluxDB database
 type InfluxDBSink struct {
-	cluster  string
-	c        client.Client
-	bpConfig client.BatchPointsConfig
+	clusterName string
+	cluster     *Cluster
+	client      client.Client
+	bpConfig    client.BatchPointsConfig
+	exports     exportMap
 }
 
 // GetInfluxDBWriter returns an InfluxDB DBWriter
@@ -22,10 +24,11 @@ func GetInfluxDBWriter() DBWriter {
 
 // Init initializes an InfluxDBSink so that points can be written
 // The array of argument strings comprises host, port, database
-func (s *InfluxDBSink) Init(cluster string, _ clusterConf, args []string) error {
+func (s *InfluxDBSink) Init(cluster *Cluster, conf clusterConf, gc globalConfig) error {
 	var username, password string
 	authenticated := false
 	// args are host, port, database, and, optionally, username and password
+	args := gc.ProcessorArgs
 	switch len(args) {
 	case 3:
 		authenticated = false
@@ -35,6 +38,7 @@ func (s *InfluxDBSink) Init(cluster string, _ clusterConf, args []string) error 
 		return fmt.Errorf("InfluxDB Init() wrong number of args %d - expected 3", len(args))
 	}
 
+	s.clusterName = cluster.ClusterName
 	s.cluster = cluster
 	host, port, database := args[0], args[1], args[2]
 	if authenticated {
@@ -48,7 +52,7 @@ func (s *InfluxDBSink) Init(cluster string, _ clusterConf, args []string) error 
 		Precision: "s",
 	}
 
-	c, err := client.NewHTTPClient(client.HTTPConfig{
+	client, err := client.NewHTTPClient(client.HTTPConfig{
 		Addr:     url,
 		Username: username,
 		Password: password,
@@ -56,7 +60,8 @@ func (s *InfluxDBSink) Init(cluster string, _ clusterConf, args []string) error 
 	if err != nil {
 		return fmt.Errorf("failed to create InfluxDB client - %v", err.Error())
 	}
-	s.c = c
+	s.client = client
+	s.exports = newExportMap(gc.LookupExportIds)
 	return nil
 }
 
@@ -78,8 +83,8 @@ func (s *InfluxDBSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) erro
 		fields := fieldsForPPStat(ppstat)
 		log.Debugf("got fields: %+v\n", fields)
 
-		tags := tagsForPPStat(ppstat)
-		tags["cluster"] = s.cluster
+		tags := tagsForPPStat(ppstat, s.cluster, s.exports)
+		tags["cluster"] = s.clusterName
 		tags["node"] = strconv.Itoa(ppstat.Node)
 		log.Debugf("got tags: %+v\n", tags)
 
@@ -95,7 +100,7 @@ func (s *InfluxDBSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) erro
 	log.Infof("Writing %d points to InfluxDB", len(bp.Points()))
 	log.Debugf("Points to be written: %+v\n", bp.Points())
 
-	err = s.c.Write(bp)
+	err = s.client.Write(bp)
 	if err != nil {
 		return fmt.Errorf("failed to write batch of points - %v", err.Error())
 	}

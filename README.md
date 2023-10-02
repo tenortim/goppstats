@@ -16,6 +16,20 @@ The partitioned performance workload data is available in the InfluxDB database 
 * The example configuration file is configured to send several sets of stats to InfluxDB via the influxdb.go backend. If you intend to use the default backend, you will need to install InfluxDB. InfluxDB can be installed locally (i.e on the same system as the connector) or remotely (i.e. on a different system). Follow the [install instructions](https://portal.influxdata.com/downloads/) but install "indluxdb" not "influxdb2"
 
 * If you installed InfluxDB to somewhere other than localhost and/or port 8086, then you'll also need to update the configuration file with the address and port of the InfluxDB service.
+* If using InfluxDB, you must create the "isi_data_insights" database before running the collectors:
+
+    ```sh
+     influx -host localhost -port 8086 -execute 'create database isi_data_insights'
+     ```
+
+* Create a local user on each cluster and grant the required privileges (readonly ISI_PRIV_NFS is needed to enable NFS export id lookup):
+
+    ```sh
+    isi auth users create --email=ppstat.user@mydomain.com --enabled=true --name=ppstatsreader --password='s3kret_pass'
+    isi auth roles create --name='PPStatsReader' --description='Role to allow reading of partitioned performance statistics via PAPI'
+    isi auth roles modify PPStatsReader --add-priv-ro=ISI_PRIV_LOGIN_PAPI --add-priv-ro=ISI_PRIV_PERFORMANCE --add-priv-ro=ISI_PRIV_NFS --add-user=ppstatsreader
+    ```
+
 * To run the connector:
 
     ```sh

@@ -2,7 +2,7 @@ package main
 
 // DiscardSink defines the data for the null/discard back end
 type DiscardSink struct {
-	cluster string
+	clusterName string
 }
 
 // GetDiscardWriter returns a discard DBWriter
@@ -12,8 +12,8 @@ func GetDiscardWriter() DBWriter {
 
 // Init initializes an DiscardSink so that points can be written (thrown away)
 // The array of argument strings are ignored
-func (s *DiscardSink) Init(cluster string, cluster_conf clusterConf, args []string) error {
-	s.cluster = cluster
+func (s *DiscardSink) Init(cluster *Cluster, cluster_conf clusterConf, gc globalConfig) error {
+	s.clusterName = cluster.ClusterName
 	return nil
 }
 

@@ -15,10 +15,12 @@ type promDsMap map[int]promDsInternal
 
 // PrometheusSink defines the data to allow us talk to an Prometheus database
 type PrometheusSink struct {
-	cluster string
-	reg     prometheus.Registerer
-	port    uint64
-	dsm     promDsMap
+	clusterName string
+	cluster     *Cluster
+	exports     exportMap
+	reg         prometheus.Registerer
+	port        uint64
+	dsm         promDsMap
 }
 
 const NAMESPACE = "isilon"
@@ -190,10 +192,11 @@ func start_prom_sd_listener(conf tomlConfig) error {
 
 // Init initializes an PrometheusSink so that points can be written
 // The array of argument strings comprises host, port, database
-func (s *PrometheusSink) Init(cluster string, cluster_conf clusterConf, args []string) error {
+func (s *PrometheusSink) Init(cluster *Cluster, cluster_conf clusterConf, gc globalConfig) error {
 	var username, password string
 	authenticated := false
 	// args are either nothing, or, optionally, a username and password to support basic auth on the metrics endpoint
+	args := gc.ProcessorArgs
 	switch len(args) {
 	case 0:
 		authenticated = false
@@ -203,7 +206,9 @@ func (s *PrometheusSink) Init(cluster string, cluster_conf clusterConf, args []s
 		return fmt.Errorf("prometheus Init() wrong number of args %d - expected 0 or 2", len(args))
 	}
 
+	s.clusterName = cluster.ClusterName
 	s.cluster = cluster
+	s.exports = newExportMap(gc.LookupExportIds)
 	port := cluster_conf.PrometheusPort
 	if port == nil {
 		return fmt.Errorf("prometheus plugin initialization failed - missing port definition for cluster %v", cluster)
@@ -237,6 +242,14 @@ func (s *PrometheusSink) Init(cluster string, cluster_conf clusterConf, args []s
 // CreateDataset assigns the provided dataset to the map
 // and creates and tracks the associated Prometheus gauges
 func (s *PrometheusSink) CreateDataset(id int, entry DsInfoEntry) {
+	// if export_id lookup is enabled, we need to add the export_path here
+	if s.exports.enabled {
+		for _, m := range entry.Metrics {
+			if m == "export_id" {
+				entry.Metrics = append(entry.Metrics, "export_path")
+			}
+		}
+	}
 	s.dsm[id] = makePromDataset(entry)
 	s.makePromMetrics(id)
 }
@@ -252,7 +265,7 @@ func (s *PrometheusSink) ClearDataset(id int) {
 	delete(s.dsm, id)
 }
 
-// UpdatesDatasets updates the back end view of the curren dataset definitions
+// UpdatesDatasets updates the back end view of the current dataset definitions
 func (s *PrometheusSink) UpdateDatasets(di *DsInfo) {
 	if s.dsm == nil {
 		// First time through so allocate and set up the maps and gauges
@@ -308,9 +321,9 @@ func (s *PrometheusSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) er
 	dsi := s.dsm[ds.Id]
 	for _, ppstat := range ppstats {
 		fieldMap := fieldsForPPStat(ppstat)
-		tags := tagsForPPStat(ppstat)
+		tags := tagsForPPStat(ppstat, s.cluster, s.exports)
 		labels := make(prometheus.Labels)
-		labels["cluster"] = s.cluster
+		labels["cluster"] = s.clusterName
 		labels["node"] = strconv.Itoa(ppstat.Node)
 
 		// check for the "overflows" buckets
@@ -324,7 +337,7 @@ func (s *PrometheusSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) er
 			}
 		} else {
 			// Regular stat so include the additional
-			for _, label := range ds.Metrics {
+			for _, label := range dsi.ds.Metrics {
 				labels[label] = tags[label]
 			}
 		}

@@ -11,7 +11,7 @@ import (
 )
 
 // Version is the released program version
-const Version = "0.15"
+const Version = "0.16"
 const userAgent = "goppstats/" + Version
 
 const PPSampleRate = 30 // Only poll once every 30s
@@ -134,7 +134,7 @@ func statsloop(cluster_conf clusterConf, gc globalConfig) {
 		Hostname:   cluster_conf.Hostname,
 		Port:       8080,
 		VerifySSL:  cluster_conf.SSLCheck,
-		maxRetries: gc.maxRetries,
+		maxRetries: gc.MaxRetries,
 	}
 	if err = c.Connect(); err != nil {
 		log.Errorf("Connection to cluster %s failed: %v", c.Hostname, err)
@@ -148,7 +148,7 @@ func statsloop(cluster_conf clusterConf, gc globalConfig) {
 		log.Error(err)
 		return
 	}
-	err = ss.Init(c.ClusterName, cluster_conf, gc.ProcessorArgs)
+	err = ss.Init(c, cluster_conf, gc)
 	if err != nil {
 		log.Errorf("Unable to initialize %s plugin: %v", gc.Processor, err)
 		return
