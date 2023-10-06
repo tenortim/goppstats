@@ -57,32 +57,32 @@ func (s *PrometheusSink) createGauge(name string, description string, labels []s
 
 func (s *PrometheusSink) makePromMetrics(id int) {
 	dsi := s.dsm[id]
-	metric_names := dsi.ds.Metrics
-	sort.Strings(metric_names)
+	metricNames := dsi.ds.Metrics
+	sort.Strings(metricNames)
 	basename := BASEPPNAME
-	for _, m := range metric_names {
+	for _, m := range metricNames {
 		basename = basename + "_" + m
 	}
 	dsi.basename = basename
-	dsi.labels = metric_names
+	dsi.labels = metricNames
 	labels := []string{"cluster", "node"}
 	// Deal with overflow buckets first
 	// These do not have the dataset breakout (since they collect/aggregate multiple values)
 	for _, wb := range workloadTypes {
 		for _, field := range ppFixedFields {
-			field_key := wb + "_" + field
+			fieldKey := wb + "_" + field
 			description := fmt.Sprintf("pp dataset %d, overflow bucket %s, metric %s", dsi.ds.Id, wb, field)
-			name := basename + "_" + field_key
+			name := basename + "_" + fieldKey
 			gauge := s.createGauge(name, description, labels)
-			dsi.metrics[field_key] = gauge
+			dsi.metrics[fieldKey] = gauge
 		}
 	}
 	// Create the regular buckets
-	ds_labels := append(labels, metric_names...)
+	dsLabels := append(labels, metricNames...)
 	for _, field := range ppFixedFields {
 		description := fmt.Sprintf("pp dataset %d, metric %s", dsi.ds.Id, field)
 		name := basename + "_" + field
-		gauge := s.createGauge(name, description, ds_labels)
+		gauge := s.createGauge(name, description, dsLabels)
 		dsi.metrics[field] = gauge
 	}
 }
@@ -111,22 +111,22 @@ func BasicAuth(handler http.HandlerFunc, username, password, realm string) http.
 	}
 }
 
-type http_sd_conf struct {
+type httpSdConf struct {
 	ListenIP    string
 	ListenPorts []uint64
 }
 
-func (h *http_sd_conf) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var listen_addrs string
+func (h *httpSdConf) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var listenAddrs string
 	w.Header().Set("Content-Type", "application/json")
 	sdstr1 := `[
 	{
 		"targets": [`
 	for i, port := range h.ListenPorts {
 		if i != 0 {
-			listen_addrs += ", "
+			listenAddrs += ", "
 		}
-		listen_addrs += fmt.Sprintf("\"%s:%d\"", h.ListenIP, port)
+		listenAddrs += fmt.Sprintf("\"%s:%d\"", h.ListenIP, port)
 	}
 	sdstr2 := `],
 		"labels": {
@@ -134,15 +134,15 @@ func (h *http_sd_conf) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 ]`
-	w.Write([]byte(sdstr1 + listen_addrs + sdstr2))
+	w.Write([]byte(sdstr1 + listenAddrs + sdstr2))
 }
 
-// find_external_addr attempt to find a reachable external IP address for the system
-func find_external_addr() (string, error) {
+// findExternalAddr attempt to find a reachable external IP address for the system
+func findExternalAddr() (string, error) {
 	// Discover local (listener) IP address
 	// Prefer IPv4 addresses
 	// If multiple are found default to the first
-	var listen_addr string
+	var listenAddr string
 
 	ips, err := ListExternalIPs()
 	if err != nil {
@@ -150,37 +150,37 @@ func find_external_addr() (string, error) {
 	}
 	for _, ip := range ips {
 		if IsIPv4(ip.String()) {
-			listen_addr = ip.String()
+			listenAddr = ip.String()
 		}
 	}
-	if listen_addr == "" {
+	if listenAddr == "" {
 		// No IPv4 addresses found, choose the first IPv6 address
 		if len(ips) == 0 {
 			return "", fmt.Errorf("no valid external IP addresses found")
 		}
-		listen_addr = ips[0].String()
+		listenAddr = ips[0].String()
 	}
-	return listen_addr, nil
+	return listenAddr, nil
 }
 
 // Start an http listener in a goroutine to server Prometheus HTTP SD requests
-func start_prom_sd_listener(conf tomlConfig) error {
-	var listen_addr string
+func startPromSdListener(conf tomlConfig) error {
+	var listenAddr string
 	var err error
-	listen_addr = conf.PromSD.ListenAddr
-	if listen_addr == "" {
-		listen_addr, err = find_external_addr()
+	listenAddr = conf.PromSD.ListenAddr
+	if listenAddr == "" {
+		listenAddr, err = findExternalAddr()
 		if err != nil {
 			return err
 		}
 	}
-	var prom_ports []uint64
+	var promPorts []uint64
 	for _, cl := range conf.Clusters {
 		if cl.PrometheusPort != nil {
-			prom_ports = append(prom_ports, *cl.PrometheusPort)
+			promPorts = append(promPorts, *cl.PrometheusPort)
 		}
 	}
-	h := http_sd_conf{ListenIP: listen_addr, ListenPorts: prom_ports}
+	h := httpSdConf{ListenIP: listenAddr, ListenPorts: promPorts}
 	// Create listener
 	mux := http.NewServeMux()
 	mux.Handle("/", &h)
@@ -192,7 +192,7 @@ func start_prom_sd_listener(conf tomlConfig) error {
 
 // Init initializes an PrometheusSink so that points can be written
 // The array of argument strings comprises host, port, database
-func (s *PrometheusSink) Init(cluster *Cluster, cluster_conf clusterConf, gc globalConfig) error {
+func (s *PrometheusSink) Init(cluster *Cluster, cc clusterConf, gc globalConfig) error {
 	var username, password string
 	authenticated := false
 	// args are either nothing, or, optionally, a username and password to support basic auth on the metrics endpoint
@@ -209,7 +209,7 @@ func (s *PrometheusSink) Init(cluster *Cluster, cluster_conf clusterConf, gc glo
 	s.clusterName = cluster.ClusterName
 	s.cluster = cluster
 	s.exports = newExportMap(gc.LookupExportIds)
-	port := cluster_conf.PrometheusPort
+	port := cc.PrometheusPort
 	if port == nil {
 		return fmt.Errorf("prometheus plugin initialization failed - missing port definition for cluster %v", cluster)
 	}
@@ -344,11 +344,11 @@ func (s *PrometheusSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) er
 
 		for _, field := range ppFixedFields {
 			// overflow bucket keys are "bucket_field"
-			field_key := field
+			fieldKey := field
 			if w != nil {
-				field_key = *w + "_" + field
+				fieldKey = *w + "_" + field
 			}
-			gauge := dsi.metrics[field_key]
+			gauge := dsi.metrics[fieldKey]
 			value, ok := fieldMap[field].(float64)
 			if !ok {
 				log.Errorf("Unexpected null value for field %v", field)

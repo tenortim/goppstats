@@ -12,7 +12,7 @@ func GetDiscardWriter() DBWriter {
 
 // Init initializes an DiscardSink so that points can be written (thrown away)
 // The array of argument strings are ignored
-func (s *DiscardSink) Init(cluster *Cluster, cluster_conf clusterConf, gc globalConfig) error {
+func (s *DiscardSink) Init(cluster *Cluster, cc clusterConf, gc globalConfig) error {
 	s.clusterName = cluster.ClusterName
 	return nil
 }

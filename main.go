@@ -89,7 +89,7 @@ func main() {
 	log.Info("Successfully read config file")
 
 	if conf.Global.Processor == PROM_PLUGIN_NAME && conf.PromSD.Enabled {
-		start_prom_sd_listener(conf)
+		startPromSdListener(conf)
 	}
 
 	// start collecting from each defined and enabled cluster
@@ -111,29 +111,29 @@ func main() {
 	log.Notice("All collectors complete - exiting")
 }
 
-func statsloop(cluster_conf clusterConf, gc globalConfig) {
+func statsloop(cc clusterConf, gc globalConfig) {
 	var err error
-	var ss DBWriter
+	var ss DBWriter // ss = stats sink
 
 	// Connect to the cluster
-	authtype := cluster_conf.AuthType
+	authtype := cc.AuthType
 	if authtype == "" {
-		log.Infof("No authentication type defined for cluster %s, defaulting to %s", cluster_conf.Hostname, authtypeSession)
+		log.Infof("No authentication type defined for cluster %s, defaulting to %s", cc.Hostname, authtypeSession)
 		authtype = defaultAuthType
 	}
 	if authtype != authtypeSession && authtype != authtypeBasic {
-		log.Warningf("Invalid authentication type %q for cluster %s, using default of %s", authtype, cluster_conf.Hostname, authtypeSession)
+		log.Warningf("Invalid authentication type %q for cluster %s, using default of %s", authtype, cc.Hostname, authtypeSession)
 		authtype = defaultAuthType
 	}
 	c := &Cluster{
 		AuthInfo: AuthInfo{
-			Username: cluster_conf.Username,
-			Password: cluster_conf.Password,
+			Username: cc.Username,
+			Password: cc.Password,
 		},
 		AuthType:   authtype,
-		Hostname:   cluster_conf.Hostname,
+		Hostname:   cc.Hostname,
 		Port:       8080,
-		VerifySSL:  cluster_conf.SSLCheck,
+		VerifySSL:  cc.SSLCheck,
 		maxRetries: gc.MaxRetries,
 	}
 	if err = c.Connect(); err != nil {
@@ -148,7 +148,7 @@ func statsloop(cluster_conf clusterConf, gc globalConfig) {
 		log.Error(err)
 		return
 	}
-	err = ss.Init(c, cluster_conf, gc)
+	err = ss.Init(c, cc, gc)
 	if err != nil {
 		log.Errorf("Unable to initialize %s plugin: %v", gc.Processor, err)
 		return
