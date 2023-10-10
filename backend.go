@@ -57,7 +57,7 @@ func newExportMap(enabled bool) exportMap {
 }
 
 // types for the decoded fields and tags
-type ptFields map[string]interface{}
+type ptFields map[string]any
 type ptTags map[string]string
 
 // fieldsForPPStat creates and populates the fixed/required fields for

@@ -214,7 +214,7 @@ func (c *Cluster) Authenticate() error {
 	}
 	// parse out time limit so we can reauth when necessary
 	dec := json.NewDecoder(resp.Body)
-	var ar map[string]interface{}
+	var ar map[string]any
 	err = dec.Decode(&ar)
 	if err != nil {
 		return fmt.Errorf("Authenticate: unable to parse auth response - %s", err)
@@ -253,7 +253,7 @@ func (c *Cluster) Authenticate() error {
 // GetClusterConfig pulls information from the cluster config API
 // endpoint, including the actual cluster name
 func (c *Cluster) GetClusterConfig() error {
-	var v interface{}
+	var v any
 	resp, err := c.restGet(configPath)
 	if err != nil {
 		return err
@@ -262,9 +262,9 @@ func (c *Cluster) GetClusterConfig() error {
 	if err != nil {
 		return err
 	}
-	m := v.(map[string]interface{})
+	m := v.(map[string]any)
 	version := m["onefs_version"]
-	r := version.(map[string]interface{})
+	r := version.(map[string]any)
 	release := r["version"]
 	rel := release.(string)
 	c.OSVersion = rel
@@ -310,7 +310,7 @@ func (c *Cluster) GetDataSetInfo() (*DsInfo, error) {
 // GetExportPathById returns the first defined path for the given NFS export id or an error
 func (c *Cluster) GetExportPathById(id int) (string, error) {
 	// We only care about the paths component here, so ignore the rest
-	var exports interface{}
+	var exports any
 	url := fmt.Sprintf("%s/%d", exportPath, id)
 	log.Debugf("fetching export info from %s\n", url)
 	res, err := c.restGet(url)
@@ -322,14 +322,14 @@ func (c *Cluster) GetExportPathById(id int) (string, error) {
 		return "", err
 	}
 	ea1 := exports.(map[string]any)
-	ea2 := ea1["exports"].([]interface{})
+	ea2 := ea1["exports"].([]any)
 	export := ea2[0].(map[string]any)
 	paths := export["paths"]
 	if paths == nil {
 		return "", fmt.Errorf("no paths found for export id %d", id)
 	}
 	// Just return the first path, even if there are multiple
-	path := paths.([]interface{})[0]
+	path := paths.([]any)[0]
 	return path.(string), nil
 }
 
