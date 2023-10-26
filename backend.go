@@ -5,6 +5,9 @@ import (
 	"strconv"
 )
 
+// the ppFixedFields and workloadTypes definitions are a bit ugly because there are no array constants in Go
+
+// names of the statistics that each partitioned performance metric collects
 const (
 	F_BYTESIN  = "bytes_in"
 	F_BYTESOUT = "bytes_out"
@@ -19,7 +22,7 @@ const (
 	F_LATOTHER = "latency_other"
 )
 
-// sigh, no array constants in Go currently
+// ppFixedFields contains the names of the performance statistics that partitioned performance collects
 var ppFixedFields = []string{F_BYTESIN, F_BYTESOUT, F_READS, F_WRITES, F_OPS, F_L2, F_L3, F_CPU, F_LATREAD, F_LATWRITE, F_LATOTHER}
 
 // workload types: Additional Excluded Overaccounted System Unknown
@@ -31,6 +34,7 @@ const (
 	W_UNKNOWN       = "Unknown"
 )
 
+// workloadTypes contains the names of the 5 "overflow" buckets for any given dataset
 var workloadTypes = []string{W_ADDITIONAL, W_EXCLUDED, W_OVERACCOUNTED, W_SYSTEM, W_UNKNOWN}
 
 // isValidWorkloadType takes a workload_type string and validates that it is one of the 5 "overflow" buckets
@@ -42,11 +46,13 @@ func isValidWorkloadType(t string) bool {
 	return false
 }
 
+// exportMap holds a map of NFS exports ids to their corresponding NFS exports paths
 type exportMap struct {
 	enabled  bool
 	pathById map[int]string
 }
 
+// newExportMap creates a map of NFS export ids to their corresponding NFS exports paths
 func newExportMap(enabled bool) exportMap {
 	m := new(exportMap)
 	m.enabled = enabled

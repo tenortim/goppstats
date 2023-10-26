@@ -11,7 +11,7 @@ import (
 )
 
 // Version is the released program version
-const Version = "0.16"
+const Version = "0.17"
 const userAgent = "goppstats/" + Version
 
 const PPSampleRate = 30 // Only poll once every 30s

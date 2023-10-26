@@ -1,10 +1,16 @@
 package main
 
 import (
+	"crypto/subtle"
 	"fmt"
 	"net/http"
+
+	//	"regexp"
 	"sort"
 	"strconv"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -13,25 +19,74 @@ import (
 // promDsMap maps the dataset id (int) to the Prometheus-specific dataset information
 type promDsMap map[int]promDsInternal
 
+// PrometheusClient holds the metadata for the required networking (http) functionality
+type PrometheusClient struct {
+	ListenPort    uint64
+	TLSCert       string `toml:"tls_cert"`
+	TLSKey        string `toml:"tls_key"`
+	BasicUsername string `toml:"basic_username"`
+	BasicPassword string `toml:"basic_password"`
+
+	server   *http.Server
+	registry *prometheus.Registry
+}
+
 // PrometheusSink defines the data to allow us talk to an Prometheus database
 type PrometheusSink struct {
 	clusterName string
 	cluster     *Cluster
 	exports     exportMap
-	reg         prometheus.Registerer
-	port        uint64
-	dsm         promDsMap
+
+	dsm    promDsMap
+	client PrometheusClient
+
+	sync.Mutex
+	fam map[string]*MetricFamily
 }
 
 const NAMESPACE = "isilon"
 const BASEPPNAME = "ppstat"
 
+// promMetric holds the Prometheus metadata exposed by the "/metrics"
+// endpoint for a given partitioned performance stat within a dataset
+type promMetric struct {
+	name        string
+	description string
+	labels      []string
+}
+
 // promDsInternal holds the dataset and related Prometheus gauges etc.
 type promDsInternal struct {
 	ds       DsInfoEntry
 	basename string
-	metrics  map[string]*prometheus.GaugeVec
+	metrics  map[string]promMetric
 	labels   []string
+}
+
+// var invalidNameCharRE = regexp.MustCompile(`[^a-zA-Z0-9_]`)
+
+// SampleID uniquely identifies a Sample
+type SampleID string
+
+// Sample represents the current value of a series.
+type Sample struct {
+	// Labels are the Prometheus labels.
+	Labels map[string]string
+	Value  float64
+	// Metric timestamp
+	Timestamp time.Time
+	// Expiration is the deadline that this Sample is valid until.
+	Expiration time.Time
+}
+
+// MetricFamily contains the data required to build valid prometheus Metrics.
+type MetricFamily struct {
+	// Samples are the Sample belonging to this MetricFamily.
+	Samples map[SampleID]*Sample
+	// LabelSet is the label counts for all Samples.
+	LabelSet map[string]int
+	// Desc contains the detailed description for this metric
+	Desc string
 }
 
 // GetPrometheusWriter returns an Prometheus DBWriter
@@ -41,18 +96,8 @@ func GetPrometheusWriter() DBWriter {
 
 func makePromDataset(ds DsInfoEntry) promDsInternal {
 	dsi := promDsInternal{ds: ds}
-	dsi.metrics = make(map[string]*prometheus.GaugeVec)
+	dsi.metrics = make(map[string]promMetric)
 	return dsi
-}
-
-func (s *PrometheusSink) createGauge(name string, description string, labels []string) *prometheus.GaugeVec {
-	gauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: NAMESPACE,
-		Name:      name,
-		Help:      description,
-	}, labels)
-	s.reg.MustRegister(gauge)
-	return gauge
 }
 
 func (s *PrometheusSink) makePromMetrics(id int) {
@@ -73,42 +118,42 @@ func (s *PrometheusSink) makePromMetrics(id int) {
 			fieldKey := wb + "_" + field
 			description := fmt.Sprintf("pp dataset %d, overflow bucket %s, metric %s", dsi.ds.Id, wb, field)
 			name := basename + "_" + fieldKey
-			gauge := s.createGauge(name, description, labels)
-			dsi.metrics[fieldKey] = gauge
+			dsi.metrics[fieldKey] = promMetric{
+				name,
+				description,
+				labels,
+			}
 		}
 	}
 	// Create the regular buckets
-	dsLabels := append(labels, metricNames...)
+	labels = append(labels, metricNames...)
 	for _, field := range ppFixedFields {
 		description := fmt.Sprintf("pp dataset %d, metric %s", dsi.ds.Id, field)
 		name := basename + "_" + field
-		gauge := s.createGauge(name, description, dsLabels)
-		dsi.metrics[field] = gauge
+		dsi.metrics[field] = promMetric{
+			name,
+			description,
+			labels,
+		}
 	}
 }
 
-// BasicAuth wraps a handler requiring HTTP basic auth for it using the given
-// username and password and the specified realm, which shouldn't contain quotes.
-//
-// Most web browser display a dialog with something like:
-//
-//	The website says: "<realm>"
-//
-// Which is really stupid so you may want to set the realm to a message rather than
-// an actual realm.
-func BasicAuth(handler http.HandlerFunc, username, password, realm string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		user, pass, ok := r.BasicAuth()
+func (p *PrometheusClient) auth(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if p.BasicUsername != "" && p.BasicPassword != "" {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
 
-		if !ok || user != username || pass != password {
-			w.Header().Set("WWW-Authenticate", `Basic realm="`+realm+`"`)
-			w.WriteHeader(401)
-			w.Write([]byte("Unauthorised.\n"))
-			return
+			username, password, ok := r.BasicAuth()
+			if !ok ||
+				subtle.ConstantTimeCompare([]byte(username), []byte(p.BasicUsername)) != 1 ||
+				subtle.ConstantTimeCompare([]byte(password), []byte(p.BasicPassword)) != 1 {
+				http.Error(w, "Not authorized", http.StatusUnauthorized)
+				return
+			}
 		}
 
-		handler(w, r)
-	}
+		h.ServeHTTP(w, r)
+	})
 }
 
 type httpSdConf struct {
@@ -135,32 +180,6 @@ func (h *httpSdConf) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 ]`
 	w.Write([]byte(sdstr1 + listenAddrs + sdstr2))
-}
-
-// findExternalAddr attempt to find a reachable external IP address for the system
-func findExternalAddr() (string, error) {
-	// Discover local (listener) IP address
-	// Prefer IPv4 addresses
-	// If multiple are found default to the first
-	var listenAddr string
-
-	ips, err := ListExternalIPs()
-	if err != nil {
-		return "", fmt.Errorf("unable to list external IP addresses: %v", err)
-	}
-	for _, ip := range ips {
-		if IsIPv4(ip.String()) {
-			listenAddr = ip.String()
-		}
-	}
-	if listenAddr == "" {
-		// No IPv4 addresses found, choose the first IPv6 address
-		if len(ips) == 0 {
-			return "", fmt.Errorf("no valid external IP addresses found")
-		}
-		listenAddr = ips[0].String()
-	}
-	return listenAddr, nil
 }
 
 // Start an http listener in a goroutine to server Prometheus HTTP SD requests
@@ -190,10 +209,37 @@ func startPromSdListener(conf tomlConfig) error {
 	return nil
 }
 
+func (p *PrometheusClient) Connect() error {
+	addr := fmt.Sprintf(":%d", p.ListenPort)
+
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", p.auth(promhttp.HandlerFor(
+		p.registry, promhttp.HandlerOpts{ErrorHandling: promhttp.ContinueOnError})))
+
+	p.server = &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
+	go func() {
+		var err error
+		if p.TLSCert != "" && p.TLSKey != "" {
+			err = p.server.ListenAndServeTLS(p.TLSCert, p.TLSKey)
+		} else {
+			err = p.server.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
+			log.Errorf("error creating prometheus metric endpoint, err: %s\n",
+				err.Error())
+		}
+	}()
+
+	return nil
+}
+
 // Init initializes an PrometheusSink so that points can be written
 // The array of argument strings comprises host, port, database
 func (s *PrometheusSink) Init(cluster *Cluster, cc clusterConf, gc globalConfig) error {
-	var username, password string
 	authenticated := false
 	// args are either nothing, or, optionally, a username and password to support basic auth on the metrics endpoint
 	args := gc.ProcessorArgs
@@ -213,30 +259,23 @@ func (s *PrometheusSink) Init(cluster *Cluster, cc clusterConf, gc globalConfig)
 	if port == nil {
 		return fmt.Errorf("prometheus plugin initialization failed - missing port definition for cluster %v", cluster)
 	}
-	s.port = *port
+	s.client.ListenPort = *port
 
 	if authenticated {
-		username = args[0]
-		password = args[1]
+		s.client.BasicUsername = args[0]
+		s.client.BasicPassword = args[1]
 	}
 
-	reg := prometheus.NewRegistry()
-	s.reg = reg
+	registry := prometheus.NewRegistry()
+	s.client.registry = registry
+	registry.Register(s)
+
+	s.fam = make(map[string]*MetricFamily)
 
 	// Set up http server here
-	mux := http.NewServeMux()
-	handler := promhttp.HandlerFor(reg, promhttp.HandlerOpts{})
-	if authenticated {
-		handlefunc := BasicAuth(handler.ServeHTTP, username, password, "auth required to access metrics")
-		mux.HandleFunc("/metrics", handlefunc)
-	} else {
-		mux.Handle("/metrics", handler)
-	}
-	addr := fmt.Sprintf(":%d", s.port)
-	// XXX improve error handling here?
-	go func() { log.Error(http.ListenAndServe(addr, mux)) }()
+	err := s.client.Connect()
 
-	return nil
+	return err
 }
 
 // CreateDataset assigns the provided dataset to the map
@@ -257,10 +296,6 @@ func (s *PrometheusSink) CreateDataset(id int, entry DsInfoEntry) {
 // ClearDataset removes the dataset with the given id including
 // unregistering all of the Prometheus gauges
 func (s *PrometheusSink) ClearDataset(id int) {
-	// unregister all of the gauges we created for this dataset
-	for _, m := range s.dsm[id].metrics {
-		s.reg.Unregister(m)
-	}
 	// clear the map entry
 	delete(s.dsm, id)
 }
@@ -316,47 +351,170 @@ func (s *PrometheusSink) UpdateDatasets(di *DsInfo) {
 	}
 }
 
+func (s *PrometheusSink) Description() string {
+	return "Configuration for the Prometheus client to spawn"
+}
+
+// Implements prometheus.Collector
+func (s *PrometheusSink) Describe(ch chan<- *prometheus.Desc) {
+	prometheus.NewGauge(prometheus.GaugeOpts{Name: "Dummy", Help: "Dummy"}).Describe(ch)
+}
+
+// Expire removes Samples that have expired.
+func (s *PrometheusSink) Expire() {
+	now := time.Now()
+	for name, family := range s.fam {
+		for key, sample := range family.Samples {
+			// if s.ExpirationInterval.Duration != 0 && now.After(sample.Expiration) {
+			if now.After(sample.Expiration) {
+				for k := range sample.Labels {
+					family.LabelSet[k]--
+				}
+				delete(family.Samples, key)
+
+				if len(family.Samples) == 0 {
+					delete(s.fam, name)
+				}
+			}
+		}
+	}
+}
+
+// Collect implements prometheus.Collector
+func (s *PrometheusSink) Collect(ch chan<- prometheus.Metric) {
+	s.Lock()
+	defer s.Unlock()
+
+	s.Expire()
+
+	for name, family := range s.fam {
+		// Get list of all labels on MetricFamily
+		var labelNames []string
+		for k, v := range family.LabelSet {
+			if v > 0 {
+				labelNames = append(labelNames, k)
+			}
+		}
+
+		for _, sample := range family.Samples {
+			desc := prometheus.NewDesc(name, family.Desc, labelNames, nil)
+			// Get labels for this sample; unset labels will be set to the
+			// empty string
+			var labels []string
+			for _, label := range labelNames {
+				v := sample.Labels[label]
+				labels = append(labels, v)
+			}
+
+			var metric prometheus.Metric
+			var err error
+			metric, err = prometheus.NewConstMetric(desc, prometheus.GaugeValue, sample.Value, labels...)
+			if err != nil {
+				log.Errorf("error creating prometheus metric, "+
+					"key: %s, labels: %v,\nerr: %s\n",
+					name, labels, err.Error())
+			}
+
+			metric = prometheus.NewMetricWithTimestamp(sample.Timestamp, metric)
+			ch <- metric
+		}
+	}
+}
+
+// XXX We will use this when we convert the InfluxDB collector to use the full names
+// those names will be separated by periods, and this will convert them.
+// func sanitize(value string) string {
+// 	return invalidNameCharRE.ReplaceAllString(value, "_")
+// }
+
+// CreateSampleID creates a SampleID based on the tags of a OneFS.Metric.
+func CreateSampleID(tags map[string]string) SampleID {
+	pairs := make([]string, 0, len(tags))
+	for k, v := range tags {
+		pairs = append(pairs, fmt.Sprintf("%s=%s", k, v))
+	}
+	sort.Strings(pairs)
+	return SampleID(strings.Join(pairs, ","))
+}
+
+func addSample(fam *MetricFamily, sample *Sample, sampleID SampleID) {
+
+	for k := range sample.Labels {
+		fam.LabelSet[k]++
+	}
+
+	fam.Samples[sampleID] = sample
+}
+
+func (s *PrometheusSink) addMetricFamily(sample *Sample, mname string, desc string, sampleID SampleID) {
+	var fam *MetricFamily
+	var ok bool
+	if fam, ok = s.fam[mname]; !ok {
+		fam = &MetricFamily{
+			Samples:  make(map[SampleID]*Sample),
+			LabelSet: make(map[string]int),
+			Desc:     desc,
+		}
+		s.fam[mname] = fam
+	}
+
+	addSample(fam, sample, sampleID)
+}
+
 // WriteStats takes an array of StatResults and writes them to Prometheus
 func (s *PrometheusSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) error {
+	// Currently only one thread writing at any one time, but let's protect ourselves
+	s.Lock()
+	defer s.Unlock()
+
+	now := time.Now()
+
 	dsi := s.dsm[ds.Id]
 	for _, ppstat := range ppstats {
 		fieldMap := fieldsForPPStat(ppstat)
 		tags := tagsForPPStat(ppstat, s.cluster, s.exports)
+		sampleID := CreateSampleID(tags)
 		labels := make(prometheus.Labels)
 		labels["cluster"] = s.clusterName
 		labels["node"] = strconv.Itoa(ppstat.Node)
 
 		// check for the "overflows" buckets
-		w := ppstat.WorkloadType
-		if w != nil {
+		workloadType := ppstat.WorkloadType
+		if workloadType != nil {
 			// validate the return
-			if !isValidWorkloadType(*w) {
-				log.Errorf("invalid workload type %s found in output", *w)
+			if !isValidWorkloadType(*workloadType) {
+				log.Errorf("invalid workload type %s found in output", *workloadType)
 				log.Errorf("Ignoring")
 				continue
 			}
 		} else {
-			// Regular stat so include the additional
+			// Regular stat so include the additional dataset tags
 			for _, label := range dsi.ds.Metrics {
 				labels[label] = tags[label]
 			}
 		}
 
 		for _, field := range ppFixedFields {
-			// overflow bucket keys are "bucket_field"
+			// overflow bucket keys are of the form "<bucket>_<field>"
 			fieldKey := field
-			if w != nil {
-				fieldKey = *w + "_" + field
+			if workloadType != nil {
+				fieldKey = *workloadType + "_" + field
 			}
-			gauge := dsi.metrics[fieldKey]
+			fullname := dsi.metrics[fieldKey].name
+			description := dsi.metrics[fieldKey].description
 			value, ok := fieldMap[field].(float64)
 			if !ok {
 				log.Errorf("Unexpected null value for field %v", field)
 				// log.Errorf("stats = %+v, fa = %+v", stat, fa)
 				panic("unexpected null value")
 			}
-
-			gauge.With(labels).Set(value)
+			sample := &Sample{
+				Labels:     labels,
+				Value:      value,
+				Timestamp:  time.Unix(ppstat.UnixTime, 0),
+				Expiration: now.Add(30 * time.Second),
+			}
+			s.addMetricFamily(sample, fullname, description, sampleID)
 		}
 	}
 
