@@ -104,7 +104,7 @@ func (s *PrometheusSink) makePromMetrics(id int) {
 	dsi := s.dsm[id]
 	metricNames := dsi.ds.Metrics
 	sort.Strings(metricNames)
-	basename := BASEPPNAME
+	basename := NAMESPACE + "_" + BASEPPNAME
 	for _, m := range metricNames {
 		basename = basename + "_" + m
 	}
