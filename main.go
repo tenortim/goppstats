@@ -12,7 +12,7 @@ import (
 )
 
 // Version is the released program version
-const Version = "0.19"
+const Version = "0.20"
 const userAgent = "goppstats/" + Version
 
 const PPSampleRate = 30 // Only poll once every 30s
@@ -25,9 +25,9 @@ const defaultAuthType = authtypeSession
 
 // Config file plugin names
 const (
-	DISCARD_PLUGIN_NAME = "discard_plugin"
-	INFLUX_PLUGIN_NAME  = "influxdb_plugin"
-	PROM_PLUGIN_NAME    = "prometheus_plugin"
+	DISCARD_PLUGIN_NAME = "discard"
+	INFLUX_PLUGIN_NAME  = "influxdb"
+	PROM_PLUGIN_NAME    = "prometheus"
 )
 
 var log = logging.MustGetLogger("goppstats")
@@ -84,8 +84,8 @@ func validateConfigVersion(confVersion string) {
 	}
 	v := strings.TrimLeft(confVersion, "vV")
 	switch v {
-	// last breaking change was moving prometheus port in v0.09
-	case "0.19", "0.18", "0.17", "0.16", "0.15", "0.14", "0.13", "0.12", "0.11", "0.10":
+	// last breaking change was moving prometheus port in v0.20
+	case "0.20":
 		return
 	}
 	log.Fatalf("Config file version %q is not compatible with this collector version %s", confVersion, Version)
@@ -113,26 +113,29 @@ func main() {
 
 	// start collecting from each defined and enabled cluster
 	var wg sync.WaitGroup
-	for _, cl := range conf.Clusters {
+	for ci, cl := range conf.Clusters {
 		if cl.Disabled {
 			log.Infof("skipping disabled cluster %q", cl.Hostname)
 			continue
 		}
 		wg.Add(1)
-		go func(cl clusterConf) {
+		go func(ci int, cl clusterConf) {
 			log.Infof("spawning collection loop for cluster %s", cl.Hostname)
 			defer wg.Done()
-			statsloop(cl, conf.Global)
+			statsloop(&conf, ci)
 			log.Infof("collection loop for cluster %s ended", cl.Hostname)
-		}(cl)
+		}(ci, cl)
 	}
 	wg.Wait()
 	log.Notice("All collectors complete - exiting")
 }
 
-func statsloop(cc clusterConf, gc globalConfig) {
+func statsloop(config *tomlConfig, ci int) {
 	var err error
 	var ss DBWriter // ss = stats sink
+
+	cc := config.Clusters[ci]
+	gc := config.Global
 
 	// Connect to the cluster
 	authtype := cc.AuthType
@@ -167,7 +170,7 @@ func statsloop(cc clusterConf, gc globalConfig) {
 		log.Error(err)
 		return
 	}
-	err = ss.Init(c, cc, gc)
+	err = ss.Init(c, config, ci)
 	if err != nil {
 		log.Errorf("Unable to initialize %s plugin: %v", gc.Processor, err)
 		return

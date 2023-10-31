@@ -34,7 +34,7 @@ type PrometheusClient struct {
 // PrometheusSink defines the data to allow us talk to an Prometheus database
 type PrometheusSink struct {
 	clusterName string
-	cluster     *Cluster
+	cluster     *Cluster // needed to enable per-cluster export id lookup
 	exports     exportMap
 
 	dsm    promDsMap
@@ -238,32 +238,21 @@ func (p *PrometheusClient) Connect() error {
 }
 
 // Init initializes an PrometheusSink so that points can be written
-// The array of argument strings comprises host, port, database
-func (s *PrometheusSink) Init(cluster *Cluster, cc clusterConf, gc globalConfig) error {
-	authenticated := false
-	// args are either nothing, or, optionally, a username and password to support basic auth on the metrics endpoint
-	args := gc.ProcessorArgs
-	switch len(args) {
-	case 0:
-		authenticated = false
-	case 2:
-		authenticated = true
-	default:
-		return fmt.Errorf("prometheus Init() wrong number of args %d - expected 0 or 2", len(args))
-	}
-
+func (s *PrometheusSink) Init(cluster *Cluster, config *tomlConfig, ci int) error {
 	s.clusterName = cluster.ClusterName
 	s.cluster = cluster
+	pc := config.Prometheus
+	gc := config.Global
 	s.exports = newExportMap(gc.LookupExportIds)
-	port := cc.PrometheusPort
+	port := config.Clusters[ci].PrometheusPort
 	if port == nil {
 		return fmt.Errorf("prometheus plugin initialization failed - missing port definition for cluster %v", cluster)
 	}
 	s.client.ListenPort = *port
 
-	if authenticated {
-		s.client.BasicUsername = args[0]
-		s.client.BasicPassword = args[1]
+	if pc.Authenticated {
+		s.client.BasicUsername = pc.Username
+		s.client.BasicPassword = pc.Password
 	}
 
 	registry := prometheus.NewRegistry()

@@ -126,7 +126,7 @@ const exportPath = "/platform/1/protocols/nfs/exports"
 
 const maxTimeoutSecs = 1800 // clamp retry timeout to 30 minutes
 
-// Set up Client etc.
+// initialize handles setting up the API client
 func (c *Cluster) initialize() error {
 	// already initialized?
 	if c.client != nil {
@@ -382,7 +382,7 @@ func isConnectionRefused(err error) bool {
 	return false
 }
 
-// get REST response from the API
+// restGet returns the REST response for the given endpoint from the API
 func (c *Cluster) restGet(endpoint string) ([]byte, error) {
 	var err error
 	var resp *http.Response

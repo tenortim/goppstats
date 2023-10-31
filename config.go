@@ -18,19 +18,34 @@ const defaultMaxRetries = 8
 
 // config file structures
 type tomlConfig struct {
-	Global   globalConfig
-	PromSD   promSdConf    `toml:"prom_http_sd"`
-	Clusters []clusterConf `toml:"cluster"`
+	Global     globalConfig
+	InfluxDB   influxDBConfig   `toml:"influxdb"`
+	Prometheus prometheusConfig `toml:"prometheus"`
+	PromSD     promSdConf       `toml:"prom_http_sd"`
+	Clusters   []clusterConf    `toml:"cluster"`
 }
 
 type globalConfig struct {
-	Version          string   `toml:"version"`
-	Processor        string   `toml:"stats_processor"`
-	ProcessorArgs    []string `toml:"stats_processor_args"`
-	ActiveStatGroups []string `toml:"active_stat_groups"`
-	MinUpdateInvtl   int      `toml:"min_update_interval_override"`
-	MaxRetries       int      `toml:"max_retries"`
-	LookupExportIds  bool     `toml:"lookup_export_ids"`
+	Version         string `toml:"version"`
+	Processor       string `toml:"stats_processor"`
+	MinUpdateInvtl  int    `toml:"min_update_interval_override"`
+	MaxRetries      int    `toml:"max_retries"`
+	LookupExportIds bool   `toml:"lookup_export_ids"`
+}
+
+type influxDBConfig struct {
+	Host          string `toml:"host"`
+	Port          string `toml:"port"`
+	Database      string `toml:"database"`
+	Authenticated bool   `toml:"authenticated"`
+	Username      string `toml:"username"`
+	Password      string `toml:"password"`
+}
+
+type prometheusConfig struct {
+	Authenticated bool   `toml:"authenticated"`
+	Username      string `toml:"username"`
+	Password      string `toml:"password"`
 }
 
 type promSdConf struct {
@@ -56,7 +71,6 @@ func mustReadConfig() tomlConfig {
 	_, err := toml.DecodeFile(*configFileName, &conf)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: unable to read config file %s, exiting\n", os.Args[0], *configFileName)
-		// don't call log.Fatal so goimports doesn't get confused and try to add "log" to the imports
 		log.Critical(err)
 		os.Exit(1)
 	}

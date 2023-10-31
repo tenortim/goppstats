@@ -4,31 +4,19 @@
 # This field ties the config file syntax/format back to the collector version.
 # This allows the collector to flag breaking changes where the config file needs to be updated.
 # string optionally starting with "v"/"V" e.g., "v0.10", or "0.10"
-version = "v0.19"
+version = "v0.20"
 
 # Pluggable back end support
+# Supported back ends are "influxdb", "prometheus" and "discard"
 # Default configuration uses InfluxDB (v1)
-stats_processor = "influxdb_plugin"
-# The first three arguments are the host/IP, port and database for the InfluxDB database
-# Optionally, pass the InfluxDB username and password as the fourth and fifth arguments, e.g.:
-# localhost 8086 isi_data_insights influxdbuser influxdbpass
-stats_processor_args = [ "localhost", "8086", "isi_data_insights" ]
+stats_processor = "influxdb"
 
-# Prometheus collector support
-# stats_processor = "prometheus_plugin"
-# The port configuration has moved to the cluster section since it must be different for each cluster
-# The optional first and second arguments are used for basic auth support
-# stats_processor_args = []
-# stats_processor_args = ["promuser", "prompass" ]
+# NFS export id -> export path lookup
+# If set to true, the API user must have readonly ISI_PRIV_NFS privilege
+lookup_export_ids = false
 
-# Alternative back end which collects and discards the data (for testing)
-# stats_processor = "discard_plugin"
-# stats_processor_args = []
-
-# If set to 0 or -1, authentication will be retried indefintely
-# There is still an exponential backoff that is clamped to a maximum of
-# 30 minutes.
-# Default is still 8 retries. Uncomment the following line to retry forever
+# Maximum number of retries for http requests (both data and auth)
+# Default is 8 retries. Uncomment the following line to retry forever
 # max_retries = 0
 
 # The min_update_interval_override param provides ability to override the
@@ -37,6 +25,29 @@ stats_processor_args = [ "localhost", "8086", "isi_data_insights" ]
 # the daemon's queries from putting too much stress on the cluster.
 # The default value is 30 seconds.
 # min_update_interval_override = 30
+
+############################ End of global section ############################
+
+############################ Back end configuration ###########################
+# Influxdb configuration
+[influxdb]
+host = "localhost"
+port = "8086"
+database = "isi_data_insights"
+authenticated = false
+# username = "influxuser"
+# password = "influxpass"
+
+# Prometheus configuration
+[prometheus]
+# optional basic auth
+authenticated = false
+# username = "promuser"
+# password = "prompass"
+
+# discard back end currently has no configurable options and hence no config stanza
+
+######################## End of back end configuration ########################
 
 # If using prometheus, the collector supports the Prometheus "http SD" service
 # discovery mechanism.
@@ -48,6 +59,7 @@ enabled = false
 # listen_addr = "external_hostname"
 sd_port = 9999
 
+############################# Cluster configuration ###########################
 
 # clusters in this section are queried for all partitioned performance datasets
 # the collector checks the dataset definition each collection period and handles
@@ -67,3 +79,5 @@ hostname = "demo.cluster.com"
 username = "root"
 password = "a"
 verify-ssl = true
+
+######################### End of cluster configuration ########################

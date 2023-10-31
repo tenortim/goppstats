@@ -11,7 +11,7 @@ import (
 // InfluxDBSink defines the data to allow us talk to an InfluxDB database
 type InfluxDBSink struct {
 	clusterName string
-	cluster     *Cluster
+	cluster     *Cluster // needed to enable per-cluster export id lookup
 	client      client.Client
 	bpConfig    client.BatchPointsConfig
 	exports     exportMap
@@ -23,33 +23,21 @@ func GetInfluxDBWriter() DBWriter {
 }
 
 // Init initializes an InfluxDBSink so that points can be written
-// The array of argument strings comprises host, port, database
-func (s *InfluxDBSink) Init(cluster *Cluster, conf clusterConf, gc globalConfig) error {
-	var username, password string
-	authenticated := false
-	// args are host, port, database, and, optionally, username and password
-	args := gc.ProcessorArgs
-	switch len(args) {
-	case 3:
-		authenticated = false
-	case 5:
-		authenticated = true
-	default:
-		return fmt.Errorf("InfluxDB Init() wrong number of args %d - expected 3", len(args))
-	}
-
+func (s *InfluxDBSink) Init(cluster *Cluster, config *tomlConfig, ci int) error {
 	s.clusterName = cluster.ClusterName
 	s.cluster = cluster
-	host, port, database := args[0], args[1], args[2]
-	if authenticated {
-		username = args[3]
-		password = args[4]
-	}
-	url := "http://" + host + ":" + port
+	var username, password string
+	ic := config.InfluxDB
+	url := "http://" + ic.Host + ":" + ic.Port
 
 	s.bpConfig = client.BatchPointsConfig{
-		Database:  database,
+		Database:  ic.Database,
 		Precision: "s",
+	}
+
+	if ic.Authenticated {
+		username = ic.Username
+		password = ic.Password
 	}
 
 	client, err := client.NewHTTPClient(client.HTTPConfig{
@@ -61,7 +49,7 @@ func (s *InfluxDBSink) Init(cluster *Cluster, conf clusterConf, gc globalConfig)
 		return fmt.Errorf("failed to create InfluxDB client - %v", err.Error())
 	}
 	s.client = client
-	s.exports = newExportMap(gc.LookupExportIds)
+	s.exports = newExportMap(config.Global.LookupExportIds)
 	return nil
 }
 
@@ -73,7 +61,6 @@ func (s *InfluxDBSink) UpdateDatasets(di *DsInfo) {
 // WriteStats takes an array of StatResults and writes them to InfluxDB
 func (s *InfluxDBSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) error {
 	keyName := ds.StatKey
-	log.Infof("WritePPStats called for %d points", len(ppstats))
 
 	bp, err := client.NewBatchPoints(s.bpConfig)
 	if err != nil {
@@ -97,9 +84,6 @@ func (s *InfluxDBSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) erro
 		bp.AddPoint(pt)
 	}
 	// write the batch
-	log.Infof("Writing %d points to InfluxDB", len(bp.Points()))
-	log.Debugf("Points to be written: %+v\n", bp.Points())
-
 	err = s.client.Write(bp)
 	if err != nil {
 		return fmt.Errorf("failed to write batch of points - %v", err.Error())
