@@ -33,7 +33,7 @@ The partitioned performance workload data is available in the InfluxDB database 
 * To run the connector:
 
     ```sh
-    ./goppstats
+    (nohup ./goppstats &)
     ```
 
 * If you wish to use Prometheus as the backend target, configure it in the "global" section of the config file and add a "prometheus_port" to each configured cluster stanze. This will spawn a Prometheus http metrics listener on the configured port.
