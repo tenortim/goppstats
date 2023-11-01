@@ -130,6 +130,7 @@ const maxTimeoutSecs = 1800 // clamp retry timeout to 30 minutes
 func (c *Cluster) initialize() error {
 	// already initialized?
 	if c.client != nil {
+		log.Warningf("initialize called for cluster %s when it was already initialized, skipping", c.Hostname)
 		return nil
 	}
 	if c.Username == "" {
@@ -159,8 +160,13 @@ func (c *Cluster) initialize() error {
 	return nil
 }
 
-// Authenticate to the cluster using the session API endpoint
-// store the cookies
+// String returns the string representation of Cluster as the cluster name
+func (c *Cluster) String() string {
+	return c.ClusterName
+}
+
+// Authenticate authentices to the cluster using the session API endpoint
+// and saves the cookies needed to authenticate subsequent requests
 func (c *Cluster) Authenticate() error {
 	var err error
 	var resp *http.Response
@@ -301,7 +307,7 @@ func (c *Cluster) GetDataSetInfo() (*DsInfo, error) {
 
 	err = json.Unmarshal(res, &di)
 	if err != nil {
-		log.Errorf("Failed to unmarshal data set info for cluster %s", c.ClusterName)
+		log.Errorf("Failed to unmarshal data set info for cluster %s", c)
 		return nil, err
 	}
 	return &di, nil
@@ -340,11 +346,11 @@ func (c *Cluster) GetPPStats(dsName string) ([]PPStatResult, error) {
 
 	basePath := ppWorkloadPath + "?degraded=true&nodes=all&dataset=" + dsName
 	// Need special case for short last get
-	log.Infof("fetching PP stats from cluster %s", c.ClusterName)
-	// log.Debugf("cluster %s fetching %s", c.ClusterName, buffer.String())
+	log.Infof("fetching PP stats from cluster %s", c)
+	// log.Debugf("cluster %s fetching %s", c, buffer.String())
 	resp, err := c.restGet(basePath)
 	if err != nil {
-		log.Errorf("Attempt to retrieve workload data for cluster %s, data set %s failed - %s", c.ClusterName, dsName, err)
+		log.Errorf("Attempt to retrieve workload data for cluster %s, data set %s failed - %s", c, dsName, err)
 		return nil, err
 	}
 	log.Debugf("workload response: %s", resp)
@@ -388,7 +394,7 @@ func (c *Cluster) restGet(endpoint string) ([]byte, error) {
 	var resp *http.Response
 
 	if c.AuthType == authtypeSession && time.Now().After(c.reauthTime) {
-		log.Infof("re-authenticating to cluster %v based on timer", c.ClusterName)
+		log.Infof("re-authenticating to cluster %s based on timer", c)
 		if err = c.Authenticate(); err != nil {
 			return nil, err
 		}
@@ -411,13 +417,13 @@ func (c *Cluster) restGet(endpoint string) ([]byte, error) {
 			if resp.StatusCode == http.StatusOK {
 				break
 			}
+			resp.Body.Close()
 			// check for need to re-authenticate (maybe we are talking to a different node)
 			if resp.StatusCode == http.StatusUnauthorized {
-				resp.Body.Close()
 				if c.AuthType == authtypeBasic {
-					return nil, fmt.Errorf("basic authentication for cluster %v failed - check username and password", c.ClusterName)
+					return nil, fmt.Errorf("basic authentication for cluster %s failed - check username and password", c)
 				}
-				log.Noticef("Authentication to cluster %v failed, attempting to re-authenticate", c.ClusterName)
+				log.Noticef("Session-based authentication to cluster %s failed, attempting to re-authenticate", c)
 				if err = c.Authenticate(); err != nil {
 					return nil, err
 				}
@@ -428,8 +434,7 @@ func (c *Cluster) restGet(endpoint string) ([]byte, error) {
 				continue
 				// TODO handle repeated auth failures to avoid panic
 			}
-			resp.Body.Close()
-			return nil, fmt.Errorf("Cluster %v returned unexpected HTTP response: %v", c.ClusterName, resp.Status)
+			return nil, fmt.Errorf("Cluster %s returned unexpected HTTP response: %v", c, resp.Status)
 		}
 		// assert err != nil
 		// TODO - consider adding more retryable cases e.g. temporary DNS hiccup
@@ -448,7 +453,7 @@ func (c *Cluster) restGet(endpoint string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Cluster %v returned unexpected HTTP response: %v", c.ClusterName, resp.Status)
+		return nil, fmt.Errorf("Cluster %s returned unexpected HTTP response: %v", c, resp.Status)
 	}
 	body, err := io.ReadAll(resp.Body)
 	return body, err
