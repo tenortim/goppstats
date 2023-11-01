@@ -241,28 +241,31 @@ func (p *PrometheusClient) Connect() error {
 func (s *PrometheusSink) Init(cluster *Cluster, config *tomlConfig, ci int) error {
 	s.clusterName = cluster.ClusterName
 	s.cluster = cluster
-	pc := config.Prometheus
+	promconf := config.Prometheus
 	gc := config.Global
 	s.exports = newExportMap(gc.LookupExportIds)
 	port := config.Clusters[ci].PrometheusPort
 	if port == nil {
 		return fmt.Errorf("prometheus plugin initialization failed - missing port definition for cluster %v", cluster)
 	}
-	s.client.ListenPort = *port
+	pc := s.client
+	pc.ListenPort = *port
 
-	if pc.Authenticated {
-		s.client.BasicUsername = pc.Username
-		s.client.BasicPassword = pc.Password
+	if promconf.Authenticated {
+		pc.BasicUsername = promconf.Username
+		pc.BasicPassword = promconf.Password
 	}
+	pc.TLSCert = config.Prometheus.TLSCert
+	pc.TLSKey = config.Prometheus.TLSKey
 
 	registry := prometheus.NewRegistry()
-	s.client.registry = registry
+	pc.registry = registry
 	registry.Register(s)
 
 	s.fam = make(map[string]*MetricFamily)
 
 	// Set up http server here
-	err := s.client.Connect()
+	err := pc.Connect()
 
 	return err
 }
