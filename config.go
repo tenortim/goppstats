@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -26,11 +27,13 @@ type tomlConfig struct {
 }
 
 type globalConfig struct {
-	Version         string `toml:"version"`
-	Processor       string `toml:"stats_processor"`
-	MinUpdateInvtl  int    `toml:"min_update_interval_override"`
-	MaxRetries      int    `toml:"max_retries"`
-	LookupExportIds bool   `toml:"lookup_export_ids"`
+	Version         string  `toml:"version"`
+	LogFile         *string `toml:"logfile"`
+	LogToStdout     bool    `toml:"log_to_stdout"`
+	Processor       string  `toml:"stats_processor"`
+	MinUpdateInvtl  int     `toml:"min_update_interval_override"`
+	MaxRetries      int     `toml:"max_retries"`
+	LookupExportIds bool    `toml:"lookup_export_ids"`
 }
 
 type influxDBConfig struct {
@@ -82,4 +85,18 @@ func mustReadConfig() tomlConfig {
 	}
 
 	return conf
+}
+
+const ENVPREFIX = "$env:"
+
+func secretFromEnv(s string) (string, error) {
+	if !strings.HasPrefix(s, ENVPREFIX) {
+		return s, nil
+	}
+	envvar := strings.TrimPrefix(s, ENVPREFIX)
+	secret := os.Getenv(envvar)
+	if secret == "" {
+		return "", fmt.Errorf("unable to find environment variable %s to interpolate", envvar)
+	}
+	return secret, nil
 }
