@@ -16,6 +16,11 @@ const defaultMinUpdateInterval = 30
 
 // Default retry limit
 const defaultMaxRetries = 8
+const ProcessordefaultMaxRetries = 8
+const ProcessorDefaultRetryIntvl = 5
+
+// Default Normalizaion of ClusterNames
+const defaultPreserveCase = false
 
 // config file structures
 type tomlConfig struct {
@@ -27,13 +32,16 @@ type tomlConfig struct {
 }
 
 type globalConfig struct {
-	Version         string  `toml:"version"`
-	LogFile         *string `toml:"logfile"`
-	LogToStdout     bool    `toml:"log_to_stdout"`
-	Processor       string  `toml:"stats_processor"`
-	MinUpdateInvtl  int     `toml:"min_update_interval_override"`
-	MaxRetries      int     `toml:"max_retries"`
-	LookupExportIds bool    `toml:"lookup_export_ids"`
+	Version             string  `toml:"version"`
+	LogFile             *string `toml:"logfile"`
+	LogToStdout         bool    `toml:"log_to_stdout"`
+	Processor           string  `toml:"stats_processor"`
+	ProcessorMaxRetries int     `toml:"stats_processor_max_retries"`
+	ProcessorRetryIntvl int     `toml:"stats_processor_retry_interval"`
+	MinUpdateInvtl      int     `toml:"min_update_interval_override"`
+	MaxRetries          int     `toml:"max_retries"`
+	LookupExportIds     bool    `toml:"lookup_export_ids"`
+	PreserveCase        bool    `toml:"preserve_case"` // enable/disable normalization of Cluster Names
 }
 
 type influxDBConfig struct {
@@ -67,12 +75,16 @@ type clusterConf struct {
 	SSLCheck       bool    `toml:"verify-ssl"` // turn on/off SSL cert checking to handle self-signed certificates
 	Disabled       bool    // if set, disable collection for this cluster
 	PrometheusPort *uint64 `toml:"prometheus_port"` // If using the Prometheus collector, define the listener port for the metrics handler
+	PreserveCase   *bool   `toml:"preserve_case"`   // Overwrite normalization of Cluster Name
 }
 
 func mustReadConfig() tomlConfig {
 	var conf tomlConfig
 	conf.Global.MaxRetries = defaultMaxRetries
+	conf.Global.ProcessorMaxRetries = ProcessordefaultMaxRetries
+	conf.Global.ProcessorRetryIntvl = ProcessorDefaultRetryIntvl
 	conf.Global.MinUpdateInvtl = defaultMinUpdateInterval
+	conf.Global.PreserveCase = defaultPreserveCase
 	_, err := toml.DecodeFile(*configFileName, &conf)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: unable to read config file %s, exiting\n", os.Args[0], *configFileName)
@@ -83,7 +95,9 @@ func mustReadConfig() tomlConfig {
 	if conf.Global.MaxRetries <= 0 {
 		conf.Global.MaxRetries = math.MaxInt
 	}
-
+	if conf.Global.ProcessorMaxRetries <= 0 {
+		conf.Global.ProcessorMaxRetries = math.MaxInt
+	}
 	return conf
 }
 
