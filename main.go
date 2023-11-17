@@ -12,7 +12,7 @@ import (
 )
 
 // Version is the released program version
-const Version = "0.24"
+const Version = "0.25"
 const userAgent = "goppstats/" + Version
 
 const PPSampleRate = 30 // Only poll once every 30s
@@ -25,9 +25,10 @@ const defaultAuthType = authtypeSession
 
 // Config file plugin names
 const (
-	DISCARD_PLUGIN_NAME = "discard"
-	INFLUX_PLUGIN_NAME  = "influxdb"
-	PROM_PLUGIN_NAME    = "prometheus"
+	DISCARD_PLUGIN_NAME  = "discard"
+	INFLUX_PLUGIN_NAME   = "influxdb"
+	INFLUXv2_PLUGIN_NAME = "influxdbv2"
+	PROM_PLUGIN_NAME     = "prometheus"
 )
 
 var log = logging.MustGetLogger("goppstats")
@@ -123,7 +124,7 @@ func validateConfigVersion(confVersion string) {
 	v := strings.TrimLeft(confVersion, "vV")
 	switch v {
 	// last breaking change was logging changes in v0.23
-	case "0.24", "0.23":
+	case "0.25", "0.24", "0.23":
 		return
 	}
 	log.Fatalf("Config file version %q is not compatible with this collector version %s", confVersion, Version)
@@ -308,6 +309,8 @@ func getDBWriter(sp string) (DBWriter, error) {
 		return GetDiscardWriter(), nil
 	case INFLUX_PLUGIN_NAME:
 		return GetInfluxDBWriter(), nil
+	case INFLUXv2_PLUGIN_NAME:
+		return GetInfluxDBv2Writer(), nil
 	case PROM_PLUGIN_NAME:
 		return GetPrometheusWriter(), nil
 	default:
