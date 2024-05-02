@@ -52,9 +52,6 @@ func (s *InfluxDBv2Sink) Init(cluster *Cluster, config *tomlConfig, ci int) erro
 			log.Errorf("InfluxDB async write error for cluster %s: %s\n", cluster, err.Error())
 		}
 	}()
-	if err != nil {
-		return fmt.Errorf("failed to create InfluxDBv2 client - %v", err.Error())
-	}
 
 	s.exports = newExportMap(config.Global.LookupExportIds)
 	return nil
