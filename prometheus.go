@@ -483,8 +483,10 @@ func (s *PrometheusSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) er
 		labels["node"] = strconv.Itoa(ppstat.Node)
 
 		// check for the "overflows" buckets
+		// "Pinned" is special. It is effectively a regular stat gather not a separate bucket.
+		// We do add a label to show whether it was a pinned workflow or not.
 		workloadType := ppstat.WorkloadType
-		if workloadType != nil {
+		if workloadType != nil && *workloadType != W_PINNED {
 			// validate the return
 			if !isValidWorkloadType(*workloadType) {
 				log.Errorf("invalid workload type %s found in output", *workloadType)
@@ -496,12 +498,17 @@ func (s *PrometheusSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) er
 			for _, label := range dsi.ds.Metrics {
 				labels[label] = tags[label]
 			}
+			if *workloadType != W_PINNED {
+				labels["pinned"] = "true"
+			} else {
+				labels["pinned"] = "false"
+			}
 		}
 
 		for _, field := range ppFixedFields {
 			// overflow bucket keys are of the form "<bucket>_<field>"
 			fieldKey := field
-			if workloadType != nil {
+			if workloadType != nil && *workloadType != W_PINNED {
 				fieldKey = *workloadType + "_" + field
 			}
 			fullname := dsi.metrics[fieldKey].name

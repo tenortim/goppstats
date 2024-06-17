@@ -32,6 +32,7 @@ const (
 	W_OVERACCOUNTED = "Overaccounted"
 	W_SYSTEM        = "System"
 	W_UNKNOWN       = "Unknown"
+	W_PINNED        = "Pinned"
 )
 
 // workloadTypes contains the names of the 5 "overflow" buckets for any given dataset
