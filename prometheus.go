@@ -498,7 +498,7 @@ func (s *PrometheusSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) er
 			for _, label := range dsi.ds.Metrics {
 				labels[label] = tags[label]
 			}
-			if *workloadType != W_PINNED {
+			if workloadType != nil && *workloadType == W_PINNED {
 				labels["pinned"] = "true"
 			} else {
 				labels["pinned"] = "false"
