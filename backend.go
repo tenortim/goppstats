@@ -108,10 +108,9 @@ func tagsForPPStat(ppstat PPStatResult, cluster *Cluster, exports exportMap) ptT
 					log.Errorf("failed to lookup export id %d, %s", id, err)
 					path = "unknown (lookup failed)"
 				}
-				tags["export_path"] = path
-			} else {
-				tags["export_path"] = path
+				exports.pathById[id] = path
 			}
+			tags["export_path"] = path
 		}
 	}
 

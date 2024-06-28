@@ -12,7 +12,7 @@ import (
 )
 
 // Version is the released program version
-const Version = "0.27"
+const Version = "0.28"
 const userAgent = "goppstats/" + Version
 
 const PPSampleRate = 30 // Only poll once every 30s
@@ -124,7 +124,7 @@ func validateConfigVersion(confVersion string) {
 	v := strings.TrimLeft(confVersion, "vV")
 	switch v {
 	// last breaking change was logging changes in v0.23
-	case "0.27", "0.26", "0.25", "0.24", "0.23":
+	case "0.28", "0.27", "0.26", "0.25", "0.24", "0.23":
 		return
 	}
 	log.Fatalf("Config file version %q is not compatible with this collector version %s", confVersion, Version)
