@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.28 - Fri Jun 28 14:05:48 2024 -0700
+
+### Bug fixes
+
+- Fix NFS export id caching
+  - The code checked for an entry in the cache, but would never find one since it didn't actually update the cache after a lookup
+
 ## v0.27 - Tue Jun 18 09:45:42 2024 -0700
 
 ### Bug fixes
