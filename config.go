@@ -87,17 +87,16 @@ type clusterConf struct {
 	PreserveCase   *bool   `toml:"preserve_case"`   // Overwrite normalization of Cluster Name
 }
 
-func mustReadConfig() tomlConfig {
+func mustReadConfig(configFileName string) tomlConfig {
 	var conf tomlConfig
 	conf.Global.MaxRetries = defaultMaxRetries
 	conf.Global.ProcessorMaxRetries = ProcessordefaultMaxRetries
 	conf.Global.ProcessorRetryIntvl = ProcessorDefaultRetryIntvl
 	conf.Global.MinUpdateInvtl = defaultMinUpdateInterval
 	conf.Global.PreserveCase = defaultPreserveCase
-	_, err := toml.DecodeFile(*configFileName, &conf)
+	_, err := toml.DecodeFile(configFileName, &conf)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s: failed to read config file %s\nRrror %v\nExiting\n", os.Args[0], *configFileName, err.Error())
-		log.Critical(err)
+		fmt.Fprintf(os.Stderr, "%s: failed to read config file %s\nError: %v\nExiting\n", os.Args[0], configFileName, err.Error())
 		os.Exit(1)
 	}
 	// If retries is 0 or negative, make it effectively infinite

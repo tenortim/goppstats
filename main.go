@@ -35,11 +35,7 @@ var log = logging.MustGetLogger("goppstats")
 
 type loglevel logging.Level
 
-const DEFAULTLOGFILE = "./goppstats.log"
-
-var logFileName = flag.String("logfile", DEFAULTLOGFILE, "pathname of log file")
 var logLevel = loglevel(logging.NOTICE)
-var configFileName = flag.String("config-file", "goppstats.toml", "pathname of config file")
 
 func (l *loglevel) String() string {
 	level := logging.Level(*l)
@@ -62,16 +58,6 @@ func init() {
 		"default log level [CRITICAL|ERROR|WARNING|NOTICE|INFO|DEBUG]")
 }
 
-func isFlagPassed(name string) bool {
-	found := false
-	flag.Visit(func(f *flag.Flag) {
-		if f.Name == name {
-			found = true
-		}
-	})
-	return found
-}
-
 func backendFromFile(f *os.File) logging.Backend {
 	backend := logging.NewLogBackend(f, "", 0)
 	var format = logging.MustStringFormatter(
@@ -83,23 +69,23 @@ func backendFromFile(f *os.File) logging.Backend {
 	return backendLeveled
 }
 
-func setupLogging(gc globalConfig) {
+func setupLogging(gc globalConfig, logFileName string) {
 	// Up to two backends (one file, one stdout)
 	backends := make([]logging.Backend, 0, 2)
 	// default is to not log to file
 	logfile := ""
-	// is it set in the config file
+	// is it set in the config file?
 	if gc.LogFile != nil {
 		logfile = *gc.LogFile
 	}
 	// Finally, if it was set on the command line, override the setting
-	if isFlagPassed("logfile") {
-		logfile = *logFileName
+	if logFileName != "" {
+		logfile = logFileName
 	}
 	if logfile != "" {
 		f, err := os.OpenFile(logfile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "gostats: unable to open log file %s for output - %s", *logFileName, err)
+			fmt.Fprintf(os.Stderr, "gostats: unable to open log file %s for output - %s", logfile, err)
 			os.Exit(2)
 		}
 		backends = append(backends, backendFromFile(f))
@@ -131,14 +117,23 @@ func validateConfigVersion(confVersion string) {
 }
 
 func main() {
+	logFileName := flag.String("logfile", "", "pathname of log file")
+	configFileName := flag.String("config-file", "goppstats.toml", "pathname of config file")
+	versionFlag := flag.Bool("version", false, "Print application version")
 	// parse command line
 	flag.Parse()
 
+	// if version requested, print and exit
+	if *versionFlag {
+		fmt.Printf("gostats version: %s\n", Version)
+		return
+	}
+
 	// read in our config
-	conf := mustReadConfig()
+	conf := mustReadConfig(*configFileName)
 
 	// set up logging
-	setupLogging(conf.Global)
+	setupLogging(conf.Global, *logFileName)
 
 	// announce ourselves
 	log.Noticef("Starting goppstats version %s", Version)
