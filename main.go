@@ -15,7 +15,9 @@ import (
 const Version = "0.28"
 const userAgent = "goppstats/" + Version
 
-const PPSampleRate = 30 // Only poll once every 30s
+// The partitioned performance statistics on the cluster are only updated
+// once every thirty seconds
+const PPSampleRate = 30
 
 const (
 	authtypeBasic   = "basic-auth"

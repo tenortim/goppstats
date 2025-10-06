@@ -34,6 +34,8 @@ type PrometheusClient struct {
 }
 
 // PrometheusSink defines the data to allow us talk to an Prometheus database
+// Since Prometheus uses a pull model, this actually means it defines the data
+// to enable us to host a web page that the Prometheus server scrapes
 type PrometheusSink struct {
 	clusterName string
 	cluster     *Cluster // needed to enable per-cluster export id lookup
@@ -103,7 +105,7 @@ func createListener(addr string) (net.Listener, error) {
 	return l, err
 }
 
-// GetPrometheusWriter returns an Prometheus DBWriter
+// GetPrometheusWriter returns a Prometheus DBWriter
 func GetPrometheusWriter() DBWriter {
 	return &PrometheusSink{}
 }
@@ -275,7 +277,8 @@ func (p *PrometheusClient) Connect() error {
 	return nil
 }
 
-// Init initializes an PrometheusSink so that points can be written
+// Init initializes an PrometheusSink so that points can be "written"
+// (which means exposed via http in the case of Prometheus)
 func (s *PrometheusSink) Init(cluster *Cluster, config *tomlConfig, ci int) error {
 	s.clusterName = cluster.ClusterName
 	s.cluster = cluster
@@ -385,7 +388,7 @@ func (s *PrometheusSink) Description() string {
 	return "Configuration for the Prometheus client to spawn"
 }
 
-// Implements prometheus.Collector
+// Implements the prometheus.Collector interface
 func (s *PrometheusSink) Describe(ch chan<- *prometheus.Desc) {
 	prometheus.NewGauge(prometheus.GaugeOpts{Name: "Dummy", Help: "Dummy"}).Describe(ch)
 }
@@ -410,7 +413,7 @@ func (s *PrometheusSink) Expire() {
 	}
 }
 
-// Collect implements prometheus.Collector
+// Collect implements the prometheus.Collector interface
 func (s *PrometheusSink) Collect(ch chan<- prometheus.Metric) {
 	s.Lock()
 	defer s.Unlock()
@@ -449,7 +452,7 @@ func (s *PrometheusSink) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
-// XXX We will use this when we convert the InfluxDB collector to use the full names
+// XXX We will use this if/when we convert the InfluxDB collector to use the full names
 // those names will be separated by periods, and this will convert them.
 // func sanitize(value string) string {
 // 	return invalidNameCharRE.ReplaceAllString(value, "_")
@@ -466,11 +469,9 @@ func CreateSampleID(tags map[string]string) SampleID {
 }
 
 func addSample(fam *MetricFamily, sample *Sample, sampleID SampleID) {
-
 	for k := range sample.Labels {
 		fam.LabelSet[k]++
 	}
-
 	fam.Samples[sampleID] = sample
 }
 
@@ -489,7 +490,9 @@ func (s *PrometheusSink) addMetricFamily(sample *Sample, mname string, desc stri
 	addSample(fam, sample, sampleID)
 }
 
-// WriteStats takes an array of StatResults and writes them to Prometheus
+// WriteStats takes an array of PPStatResults and "writes" them to Prometheus
+// (in the case of Prometheus, this means adding them to the data exposed via http
+// that the Prometheus server will scrape)
 func (s *PrometheusSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) error {
 	// Currently only one thread writing at any one time, but let's protect ourselves
 	s.Lock()

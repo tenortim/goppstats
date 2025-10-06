@@ -22,7 +22,7 @@ import (
 // MaxAPIPathLen is the limit on the length of an API request URL
 const MaxAPIPathLen = 8198
 
-// For OneFS releases up to and including 9.6, the API supports the System
+// For OneFS releases up to and including 9.12, the API supports the System
 // dataset (0), and up to four user-defined datasets
 const MaxDsId = 4
 
@@ -166,7 +166,7 @@ func (c *Cluster) String() string {
 	return c.ClusterName
 }
 
-// Authenticate authentices to the cluster using the session API endpoint
+// Authenticate authenticates to the cluster using the session API endpoint
 // and saves the cookies needed to authenticate subsequent requests
 func (c *Cluster) Authenticate() error {
 	var err error
@@ -243,7 +243,7 @@ func (c *Cluster) Authenticate() error {
 	c.reauthTime = time.Now().Add(time.Duration(timeout) * time.Second)
 
 	c.csrfToken = ""
-	// Dig out CSRF token so we can set the appropriate header
+	// Extract the CSRF token so we can set the appropriate header
 	for _, cookie := range c.client.Jar.Cookies(u) {
 		if cookie.Name == "isicsrf" {
 			log.Debugf("Found csrf cookie %v\n", cookie)
@@ -369,6 +369,8 @@ func (c *Cluster) GetPPStats(dsName string) ([]PPStatResult, error) {
 	return results, nil
 }
 
+// parsePPStatResult unmarshals the JSON response from the partitioned-performance workload
+// endpoint and returns the workloads as an array of PPStatResult structures
 func parsePPStatResult(res []byte) ([]PPStatResult, error) {
 	// XXX need to handle errors response here!
 	workloads := PPWorkloadQuery{}
@@ -379,7 +381,8 @@ func parsePPStatResult(res []byte) ([]PPStatResult, error) {
 	return workloads.Workloads, nil
 }
 
-// helper function
+// isConnectionRefused unwraps the layers of errors from an http call to determine if
+// the underlying error was "connection refused"
 func isConnectionRefused(err error) bool {
 	if uerr, ok := err.(*url.Error); ok {
 		if nerr, ok := uerr.Err.(*net.OpError); ok {
@@ -464,6 +467,8 @@ func (c *Cluster) restGet(endpoint string) ([]byte, error) {
 	return body, err
 }
 
+// newGetRequest returns a pointer to an http.Request initialized with the
+// appropriate headers including authentication
 func (c *Cluster) newGetRequest(url string) (*http.Request, error) {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {

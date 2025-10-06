@@ -57,12 +57,12 @@ func (s *InfluxDBv2Sink) Init(cluster *Cluster, config *tomlConfig, ci int) erro
 	return nil
 }
 
-// UpdatesDatasets updates the back end view of the curren dataset definitions
+// UpdatesDatasets updates the back end view of the current dataset definitions
 func (s *InfluxDBv2Sink) UpdateDatasets(di *DsInfo) {
 	// currently, do nothing
 }
 
-// WriteStats takes an array of StatResults and writes them to InfluxDB
+// WriteStats takes an array of PPStatResults and writes them to InfluxDB
 func (s *InfluxDBv2Sink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) error {
 	keyName := ds.StatKey
 
