@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"time"
@@ -40,6 +41,17 @@ func (s *InfluxDBv2Sink) Init(cluster *Cluster, config *tomlConfig, ci int) erro
 		return fmt.Errorf("unable to retrieve InfluxDBv2 token from environment: %v", err.Error())
 	}
 	client := influxdb2.NewClient(url, token)
+	// ping the database to ensure we can connect
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	ok, err := client.Ping(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to ping InfluxDBv2 - %v", err.Error())
+	}
+	if !ok {
+		return fmt.Errorf("InfluxDBv2 ping failed - server not reachable")
+	}
+	log.Noticef("successfully connected to InfluxDBv2 for cluster %s", cluster.ClusterName)
 	writeAPI := client.WriteAPI(ic.Org, ic.Bucket)
 	s.c = client
 	s.writeAPI = writeAPI

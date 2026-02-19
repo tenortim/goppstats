@@ -53,6 +53,12 @@ func (s *InfluxDBSink) Init(cluster *Cluster, config *tomlConfig, ci int) error 
 	if err != nil {
 		return fmt.Errorf("failed to create InfluxDB client - %v", err.Error())
 	}
+	// ping the database to ensure we can connect
+	responseTime, response, err := client.Ping(30 * time.Second)
+	if err != nil {
+		return fmt.Errorf("failed to ping InfluxDB - %v", err.Error())
+	}
+	log.Noticef("successfully connected to InfluxDB: response %q in %v", response, responseTime)
 	s.client = client
 	s.exports = newExportMap(config.Global.LookupExportIds)
 	return nil
