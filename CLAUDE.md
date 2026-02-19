@@ -20,7 +20,7 @@ go test -v ./...                  # run all tests
 ./goppstats                                          # uses ./goppstats.toml
 ./goppstats -config-file /path/to/config.toml
 ./goppstats -version
-./goppstats -loglevel DEBUG       # levels: CRITICAL|ERROR|WARNING|NOTICE|INFO|DEBUG
+./goppstats -loglevel DEBUG       # levels: CRITICAL|ERROR|WARNING|NOTICE|INFO|DEBUG|TRACE
 ```
 
 ## Architecture
@@ -43,7 +43,8 @@ One goroutine is spawned per enabled cluster. The poll interval is fixed at 30 s
 
 | File | Role |
 |------|------|
-| `main.go` | Entry point, cluster loop orchestration, backend factory, logging setup |
+| `main.go` | Entry point, cluster loop orchestration, backend factory |
+| `logging.go` | slog setup: custom levels, `setupEarlyLogging`, `setupLogging`, `ParseLevel` |
 | `statssink.go` | `DBWriter` interface — contract all backends must implement |
 | `config.go` | TOML config parsing, version compatibility checks, `$env:VAR` secret interpolation |
 | `isilon_api.go` | OneFS PAPI client, session/basic-auth, PP stats querying |
@@ -74,7 +75,15 @@ The backend is selected by `stats_processor` in the config (`"influxdb"`, `"infl
 
 ### Configuration
 
-Config is TOML. The version field in `[global]` is checked for compatibility (supported: 0.23–0.28). Secrets can reference environment variables via `$env:VARNAME` syntax in any string field. See `example_goppstats.toml` for all available options.
+Config is TOML. The version field in `[global]` is checked for compatibility (supported: 0.29+). Secrets can reference environment variables via `$env:VARNAME` syntax in any string field. See `example_goppstats.toml` for all available options.
+
+Logging is configured in a `[logging]` section:
+- `logfile` — path to log file (optional)
+- `log_file_format` — `"text"` (default) or `"json"`
+- `log_level` — log level string (overridden by `-loglevel` flag)
+- `log_to_stdout` — boolean, enable console logging
+
+At least one of `logfile` or `log_to_stdout` must be configured.
 
 ### Platform Compatibility
 
@@ -83,7 +92,7 @@ Windows and Unix have separate socket option files (`control_windows.go`, `contr
 ## Dependencies
 
 - `github.com/BurntSushi/toml` — config parsing
-- `github.com/op/go-logging` — logging
+- `github.com/samber/slog-multi` — multi-handler fanout for `log/slog` (stdlib)
 - `github.com/prometheus/client_golang` — Prometheus metrics
 - `github.com/influxdata/influxdb1-client/v2` — InfluxDB v1
 - `github.com/influxdata/influxdb-client-go/v2` — InfluxDB v2

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -51,7 +52,7 @@ func (s *InfluxDBv2Sink) Init(cluster *Cluster, config *tomlConfig, ci int) erro
 	if !ok {
 		return fmt.Errorf("InfluxDBv2 ping failed - server not reachable")
 	}
-	log.Noticef("successfully connected to InfluxDBv2 for cluster %s", cluster.ClusterName)
+	log.Log(context.Background(), LevelNotice, "successfully connected to InfluxDBv2", slog.String("cluster", cluster.ClusterName))
 	writeAPI := client.WriteAPI(ic.Org, ic.Bucket)
 	s.c = client
 	s.writeAPI = writeAPI
@@ -61,7 +62,7 @@ func (s *InfluxDBv2Sink) Init(cluster *Cluster, config *tomlConfig, ci int) erro
 	// Create goroutine for reading and logging errors
 	go func() {
 		for err := range errorsCh {
-			log.Errorf("InfluxDB async write error for cluster %s: %s\n", cluster, err.Error())
+			log.Error("InfluxDB async write error", slog.String("cluster", cluster.ClusterName), slog.Any("error", err))
 		}
 	}()
 
@@ -80,12 +81,12 @@ func (s *InfluxDBv2Sink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) er
 
 	for _, ppstat := range ppstats {
 		fields := fieldsForPPStat(ppstat)
-		log.Debugf("got fields: %+v\n", fields)
+		log.Debug("got fields", slog.Any("fields", fields))
 
 		tags := tagsForPPStat(ppstat, s.cluster, s.exports)
 		tags["cluster"] = s.clusterName
 		tags["node"] = strconv.Itoa(ppstat.Node)
-		log.Debugf("got tags: %+v\n", tags)
+		log.Debug("got tags", slog.Any("tags", tags))
 
 		pt := influxdb2.NewPoint(keyName, tags, fields, time.Unix(ppstat.UnixTime, 0).UTC())
 		s.writeAPI.WritePoint(pt)

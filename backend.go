@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"strconv"
 )
 
@@ -105,7 +106,7 @@ func tagsForPPStat(ppstat PPStatResult, cluster *Cluster, exports exportMap) ptT
 				var err error
 				path, err = cluster.GetExportPathById(id)
 				if err != nil {
-					log.Errorf("failed to lookup export id %d, %s", id, err)
+					log.Error("failed to lookup export id", slog.Int("export_id", id), slog.Any("error", err))
 					path = "unknown (lookup failed)"
 				}
 				exports.pathById[id] = path

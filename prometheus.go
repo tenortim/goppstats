@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 
@@ -224,9 +225,13 @@ func startPromSdListener(conf tomlConfig) error {
 	if err != nil {
 		return fmt.Errorf("error creating listener for Prometheus HTTP SD: %w", err)
 	}
-	log.Infof("Starting Prometheus HTTP SD listener on %s", addr)
+	log.Info("Starting Prometheus HTTP SD listener", slog.String("addr", addr))
 	// XXX improve error handling here?
-	go func() { log.Error(http.Serve(listener, mux)) }()
+	go func() {
+		if err := http.Serve(listener, mux); err != nil {
+			log.Error("Prometheus HTTP SD listener error", slog.Any("error", err))
+		}
+	}()
 	return nil
 }
 
@@ -269,8 +274,7 @@ func (p *PrometheusClient) Connect() error {
 			err = p.server.Serve(listener)
 		}
 		if err != nil && err != http.ErrServerClosed {
-			log.Errorf("error creating prometheus metric endpoint, err: %s\n",
-				err.Error())
+			log.Error("error creating prometheus metric endpoint", slog.Any("error", err))
 		}
 	}()
 
@@ -441,9 +445,10 @@ func (s *PrometheusSink) Collect(ch chan<- prometheus.Metric) {
 
 			metric, err := prometheus.NewConstMetric(desc, prometheus.GaugeValue, sample.Value, labels...)
 			if err != nil {
-				log.Errorf("error creating prometheus metric, "+
-					"key: %s, labels: %v,\nerr: %s\n",
-					name, labels, err.Error())
+				log.Error("error creating prometheus metric",
+					slog.String("key", name),
+					slog.Any("labels", labels),
+					slog.Any("error", err))
 			}
 
 			metric = prometheus.NewMetricWithTimestamp(sample.Timestamp, metric)
@@ -516,8 +521,7 @@ func (s *PrometheusSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) er
 		if workloadType != nil && *workloadType != W_PINNED {
 			// validate the return
 			if !isValidWorkloadType(*workloadType) {
-				log.Errorf("invalid workload type %s found in output", *workloadType)
-				log.Errorf("Ignoring")
+				log.Error("invalid workload type found in output, ignoring", slog.String("workload_type", *workloadType))
 				continue
 			}
 		} else {
@@ -542,8 +546,7 @@ func (s *PrometheusSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) er
 			description := dsi.metrics[fieldKey].description
 			value, ok := fieldMap[field].(float64)
 			if !ok {
-				log.Errorf("Unexpected null value for field %v", field)
-				// log.Errorf("stats = %+v, fa = %+v", stat, fa)
+				log.Error("Unexpected null value for field", slog.Any("field", field))
 				panic("unexpected null value")
 			}
 			sample := &Sample{

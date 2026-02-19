@@ -1,18 +1,18 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
 	"time"
-
-	logging "github.com/op/go-logging"
 )
 
 // Version is the released program version
-const Version = "0.28"
+const Version = "0.29"
 const userAgent = "goppstats/" + Version
 
 // The partitioned performance statistics on the cluster are only updated
@@ -33,73 +33,9 @@ const (
 	PROM_PLUGIN_NAME     = "prometheus"
 )
 
-var log = logging.MustGetLogger("goppstats")
-
-type loglevel logging.Level
-
-var logLevel = loglevel(logging.NOTICE)
-
-func (l *loglevel) String() string {
-	level := logging.Level(*l)
-	return level.String()
-}
-
-func (l *loglevel) Set(value string) error {
-	level, err := logging.LogLevel(value)
-	if err != nil {
-		return err
-	}
-	*l = loglevel(level)
-	return nil
-}
-
-func init() {
-	// tie log-level variable into flag parsing
-	flag.Var(&logLevel,
-		"loglevel",
-		"default log level [CRITICAL|ERROR|WARNING|NOTICE|INFO|DEBUG]")
-}
-
-func backendFromFile(f *os.File) logging.Backend {
-	backend := logging.NewLogBackend(f, "", 0)
-	var format = logging.MustStringFormatter(
-		`%{time:2006-01-02T15:04:05Z07:00} %{shortfile} %{level} %{message}`,
-	)
-	backendFormatter := logging.NewBackendFormatter(backend, format)
-	backendLeveled := logging.AddModuleLevel(backendFormatter)
-	backendLeveled.SetLevel(logging.Level(logLevel), "")
-	return backendLeveled
-}
-
-func setupLogging(gc globalConfig, logFileName string) {
-	// Up to two backends (one file, one stdout)
-	backends := make([]logging.Backend, 0, 2)
-	// default is to not log to file
-	logfile := ""
-	// is it set in the config file?
-	if gc.LogFile != nil {
-		logfile = *gc.LogFile
-	}
-	// Finally, if it was set on the command line, override the setting
-	if logFileName != "" {
-		logfile = logFileName
-	}
-	if logfile != "" {
-		f, err := os.OpenFile(logfile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "gostats: unable to open log file %s for output - %s", logfile, err)
-			os.Exit(2)
-		}
-		backends = append(backends, backendFromFile(f))
-	}
-	if gc.LogToStdout {
-		backends = append(backends, backendFromFile(os.Stdout))
-	}
-	if len(backends) == 0 {
-		fmt.Fprintf(os.Stderr, "gostats: no logging defined, unable to continue\nPlease configure logging in the config file and/or via the command line\n")
-		os.Exit(3)
-	}
-	logging.SetBackend(backends...)
+func die(msg string, args ...any) {
+	log.Log(context.Background(), LevelFatal, msg, args...)
+	os.Exit(1)
 }
 
 // validateConfigVersion checks the version of the config file to ensure that it is
@@ -107,19 +43,22 @@ func setupLogging(gc globalConfig, logFileName string) {
 // If not, it is a fatal error
 func validateConfigVersion(confVersion string) {
 	if confVersion == "" {
-		log.Fatalf("The collector requires a versioned config file (see the example config)")
+		die("The collector requires a versioned config file (see the example config)")
 	}
 	v := strings.TrimLeft(confVersion, "vV")
 	switch v {
-	// last breaking change was logging changes in v0.23
-	case "0.28", "0.27", "0.26", "0.25", "0.24", "0.23":
+	// last breaking change was moving logging config from [global] to [logging] in v0.29
+	case "0.29":
 		return
 	}
-	log.Fatalf("Config file version %q is not compatible with this collector version %s", confVersion, Version)
+	die("Config file version is not compatible with this collector version",
+		slog.String("config_version", confVersion),
+		slog.String("collector_version", Version))
 }
 
 func main() {
 	logFileName := flag.String("logfile", "", "pathname of log file")
+	logLevel := flag.String("loglevel", "", "log level [CRITICAL|ERROR|WARNING|NOTICE|INFO|DEBUG]")
 	configFileName := flag.String("config-file", "goppstats.toml", "pathname of config file")
 	versionFlag := flag.Bool("version", false, "Print application version")
 	// parse command line
@@ -131,14 +70,17 @@ func main() {
 		return
 	}
 
+	// set up early logging so we can log config errors
+	setupEarlyLogging()
+
 	// read in our config
 	conf := mustReadConfig(*configFileName)
 
-	// set up logging
-	setupLogging(conf.Global, *logFileName)
+	// set up full logging
+	setupLogging(conf.Logging, *logLevel, *logFileName)
 
 	// announce ourselves
-	log.Noticef("Starting goppstats version %s", Version)
+	log.Log(context.Background(), LevelNotice, "Starting goppstats", slog.String("version", Version))
 
 	validateConfigVersion(conf.Global.Version)
 
@@ -150,19 +92,19 @@ func main() {
 	var wg sync.WaitGroup
 	for ci, cl := range conf.Clusters {
 		if cl.Disabled {
-			log.Infof("skipping disabled cluster %q", cl.Hostname)
+			log.Info("skipping disabled cluster", slog.String("cluster", cl.Hostname))
 			continue
 		}
 		wg.Add(1)
 		go func(ci int, cl clusterConf) {
-			log.Infof("spawning collection loop for cluster %s", cl.Hostname)
+			log.Info("spawning collection loop for cluster", slog.String("cluster", cl.Hostname))
 			defer wg.Done()
 			statsloop(&conf, ci)
-			log.Infof("collection loop for cluster %s ended", cl.Hostname)
+			log.Info("collection loop for cluster ended", slog.String("cluster", cl.Hostname))
 		}(ci, cl)
 	}
 	wg.Wait()
-	log.Notice("All collectors complete - exiting")
+	log.Log(context.Background(), LevelNotice, "All collectors complete - exiting")
 }
 
 func statsloop(config *tomlConfig, ci int) {
@@ -184,20 +126,27 @@ func statsloop(config *tomlConfig, ci int) {
 	// Connect to the cluster
 	authtype := cc.AuthType
 	if authtype == "" {
-		log.Infof("No authentication type defined for cluster %s, defaulting to %s", cc.Hostname, authtypeSession)
+		log.Info("No authentication type defined for cluster, defaulting",
+			slog.String("cluster", cc.Hostname),
+			slog.String("default", authtypeSession))
 		authtype = defaultAuthType
 	}
 	if authtype != authtypeSession && authtype != authtypeBasic {
-		log.Warningf("Invalid authentication type %q for cluster %s, using default of %s", authtype, cc.Hostname, authtypeSession)
+		log.Warn("Invalid authentication type for cluster, using default",
+			slog.String("auth_type", authtype),
+			slog.String("cluster", cc.Hostname),
+			slog.String("default", authtypeSession))
 		authtype = defaultAuthType
 	}
 	if cc.Username == "" || cc.Password == "" {
-		log.Errorf("Username and password for cluster %s must no be null", cc.Hostname)
+		log.Error("Username and password for cluster must not be null", slog.String("cluster", cc.Hostname))
 		return
 	}
 	password, err = secretFromEnv(cc.Password)
 	if err != nil {
-		log.Errorf("Unable to retrieve password from environment for cluster %s: %v", cc.Hostname, err.Error())
+		log.Error("Unable to retrieve password from environment for cluster",
+			slog.String("cluster", cc.Hostname),
+			slog.Any("error", err))
 		return
 	}
 	c := &Cluster{
@@ -213,66 +162,78 @@ func statsloop(config *tomlConfig, ci int) {
 		PreserveCase: normalize,
 	}
 	if err = c.Connect(); err != nil {
-		log.Errorf("Connection to cluster %s failed: %v", c.Hostname, err)
+		log.Error("Connection to cluster failed", slog.String("cluster", c.Hostname), slog.Any("error", err))
 		return
 	}
-	log.Infof("Connected to cluster %s, version %s", c.ClusterName, c.OSVersion)
+	log.Info("Connected to cluster", slog.String("cluster", c.ClusterName), slog.String("version", c.OSVersion))
 
 	// Configure/initialize backend database writer
 	ss, err = getDBWriter(gc.Processor)
 	if err != nil {
-		log.Error(err)
+		log.Error("unsupported backend plugin", slog.Any("error", err))
 		return
 	}
 	err = ss.Init(c, config, ci)
 	if err != nil {
-		log.Errorf("Unable to initialize %s plugin: %v", gc.Processor, err)
+		log.Error("Unable to initialize plugin", slog.String("plugin", gc.Processor), slog.Any("error", err))
 		return
 	}
 
 	// loop collecting and pushing stats
-	log.Infof("Starting stat collection loop for cluster %s", c.ClusterName)
+	log.Info("Starting stat collection loop for cluster", slog.String("cluster", c.ClusterName))
 	for {
 		curTime := time.Now()
 		nextTime := curTime.Add(time.Second * PPSampleRate)
 
 		// Grab current dataset definitions
-		log.Infof("Querying initial PP stat datasets for cluster %s", c.ClusterName)
+		log.Info("Querying initial PP stat datasets for cluster", slog.String("cluster", c.ClusterName))
 		di, err := c.GetDataSetInfo()
 		if err != nil {
-			log.Errorf("Unable to retrieve dataset information for cluster %s - %s - bailing", c.ClusterName, err)
+			log.Error("Unable to retrieve dataset information for cluster",
+				slog.String("cluster", c.ClusterName),
+				slog.Any("error", err))
 			return
 		}
-		log.Infof("Got %d data set definitions\n", di.Total)
+		log.Info("Got data set definitions", slog.Int("count", di.Total))
 		for i, entry := range di.Datasets {
-			log.Debugf("Entry %d: name: %s, statkey: %s\n", i, entry.Name, entry.StatKey)
+			log.Debug("dataset entry",
+				slog.Int("index", i),
+				slog.String("name", entry.Name),
+				slog.String("statkey", entry.StatKey))
 		}
 		ss.UpdateDatasets(di)
 
 		// Collect one set of stats
-		log.Infof("Cluster %s start collecting pp stats", c.ClusterName)
+		log.Info("Cluster start collecting pp stats", slog.String("cluster", c.ClusterName))
 		var sr []PPStatResult
 		readFailCount := 0
 		const maxRetryTime = time.Second * 1280
 		retryTime := time.Second * 10
 		for _, ds := range di.Datasets {
 			dsName := ds.Name
-			log.Debugf("Cluster %s start collecting data set %s", c.ClusterName, dsName)
+			log.Debug("Cluster start collecting data set",
+				slog.String("cluster", c.ClusterName),
+				slog.String("dataset", dsName))
 			for {
 				sr, err = c.GetPPStats(dsName)
 				if err == nil {
 					break
 				}
 				readFailCount++
-				log.Errorf("Failed to retrieve PP stats for data set %s for cluster %q: %v - retry #%d in %v", dsName, c.ClusterName, err, readFailCount, retryTime)
+				log.Error("Failed to retrieve PP stats",
+					slog.String("dataset", dsName),
+					slog.String("cluster", c.ClusterName),
+					slog.Any("error", err),
+					slog.Int("retry", readFailCount),
+					slog.Duration("retry_in", retryTime))
 				time.Sleep(retryTime)
 				if retryTime < maxRetryTime {
 					retryTime *= 2
 				}
 			}
 
-			log.Infof("Got %d workload entries", len(sr))
-			log.Infof("Cluster %s start writing stats to back end", c.ClusterName)
+			log.Info("Got workload entries", slog.Int("count", len(sr)))
+			log.Info("Cluster start writing stats to back end", slog.String("cluster", c.ClusterName))
 			// write PP stats, now with retries
 			retryTime = time.Second * time.Duration(gc.ProcessorRetryIntvl)
 			for i := 1; i <= gc.ProcessorMaxRetries; i++ {
@@ -280,14 +241,17 @@ func statsloop(config *tomlConfig, ci int) {
 				if err == nil {
 					break
 				}
-				log.Errorf("%v - retry #%d in %v", err, i, retryTime)
+				log.Error("write error, retrying",
+					slog.Any("error", err),
+					slog.Int("retry", i),
+					slog.Duration("retry_in", retryTime))
 				time.Sleep(retryTime)
 				if retryTime < maxRetryTime {
 					retryTime *= 2
 				}
 			}
 			if err != nil {
-				log.Errorf("ProcessorMaxRetries exceeded, failed to write stats to database: %s", err)
+				log.Error("ProcessorMaxRetries exceeded, failed to write stats to database", slog.Any("error", err))
 				return
 			}
 		}

@@ -4,10 +4,7 @@
 # This field ties the config file syntax/format back to the collector version.
 # This allows the collector to flag breaking changes where the config file needs to be updated.
 # string optionally starting with "v"/"V" e.g., "v0.10", or "0.10"
-version = "v0.28"
-
-logfile = "goppstats.log"
-log_to_stdout = false
+version = "v0.29"
 
 # Pluggable back end support
 # Supported back ends are "influxdb", "influxdbv2", "prometheus" and "discard"
@@ -42,6 +39,20 @@ lookup_export_ids = false
 # min_update_interval_override = 30
 
 ############################ End of global section ############################
+
+################################ Logging ######################################
+[logging]
+logfile = "goppstats.log"
+log_to_stdout = false
+
+# log_level overrides the -loglevel flag default (NOTICE).
+# Levels: CRITICAL, ERROR, WARNING, NOTICE, INFO, DEBUG, TRACE
+# log_level = "NOTICE"
+
+# log_file_format controls the format of the log file: "text" (default) or "json"
+# log_file_format = "text"
+
+############################ End of logging section ###########################
 
 ############################ Back end configuration ###########################
 # Influxdb configuration

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -58,7 +60,9 @@ func (s *InfluxDBSink) Init(cluster *Cluster, config *tomlConfig, ci int) error 
 	if err != nil {
 		return fmt.Errorf("failed to ping InfluxDB - %v", err.Error())
 	}
-	log.Noticef("successfully connected to InfluxDB: response %q in %v", response, responseTime)
+	log.Log(context.Background(), LevelNotice, "successfully connected to InfluxDB",
+		slog.String("response", response),
+		slog.Duration("response_time", responseTime))
 	s.client = client
 	s.exports = newExportMap(config.Global.LookupExportIds)
 	return nil
@@ -79,17 +83,17 @@ func (s *InfluxDBSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) erro
 	}
 	for _, ppstat := range ppstats {
 		fields := fieldsForPPStat(ppstat)
-		log.Debugf("got fields: %+v\n", fields)
+		log.Debug("got fields", slog.Any("fields", fields))
 
 		tags := tagsForPPStat(ppstat, s.cluster, s.exports)
 		tags["cluster"] = s.clusterName
 		tags["node"] = strconv.Itoa(ppstat.Node)
-		log.Debugf("got tags: %+v\n", tags)
+		log.Debug("got tags", slog.Any("tags", tags))
 
 		var pt *client.Point
 		pt, err = client.NewPoint(keyName, tags, fields, time.Unix(ppstat.UnixTime, 0).UTC())
 		if err != nil {
-			log.Warningf("failed to create point %q", keyName)
+			log.Warn("failed to create point", slog.String("key", keyName))
 			continue
 		}
 		bp.AddPoint(pt)

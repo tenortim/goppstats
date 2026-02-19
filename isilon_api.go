@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
@@ -131,7 +133,7 @@ const maxTimeoutSecs = 1800 // clamp retry timeout to 30 minutes
 func (c *Cluster) initialize() error {
 	// already initialized?
 	if c.client != nil {
-		log.Warningf("initialize called for cluster %s when it was already initialized, skipping", c.Hostname)
+		log.Warn("initialize called for cluster when it was already initialized, skipping", slog.String("cluster", c.Hostname))
 		return nil
 	}
 	if c.Username == "" {
@@ -204,7 +206,7 @@ func (c *Cluster) Authenticate() error {
 		if err == nil {
 			break
 		}
-		log.Warningf("Authentication request failed: %s - retrying in %d seconds", err, retrySecs)
+		log.Warn("Authentication request failed, retrying", slog.Any("error", err), slog.Int("retry_in_seconds", retrySecs))
 		time.Sleep(time.Duration(retrySecs) * time.Second)
 		retrySecs *= 2
 		if retrySecs > maxTimeoutSecs {
@@ -234,7 +236,7 @@ func (c *Cluster) Authenticate() error {
 		timeout = int(ta.(float64))
 	} else {
 		// This shouldn't happen, but just set it to a sane default
-		log.Warning("authentication API did not return timeout value, using default")
+		log.Warn("authentication API did not return timeout value, using default")
 		timeout = 14400
 	}
 	if timeout > 60 {
@@ -246,12 +248,12 @@ func (c *Cluster) Authenticate() error {
 	// Extract the CSRF token so we can set the appropriate header
 	for _, cookie := range c.client.Jar.Cookies(u) {
 		if cookie.Name == "isicsrf" {
-			log.Debugf("Found csrf cookie %v\n", cookie)
+			log.Debug("Found csrf cookie", slog.Any("cookie", cookie))
 			c.csrfToken = cookie.Value
 		}
 	}
 	if c.csrfToken == "" {
-		log.Debugf("No CSRF token found for cluster %s, assuming old-style session auth", c.Hostname)
+		log.Debug("No CSRF token found for cluster, assuming old-style session auth", slog.String("cluster", c.Hostname))
 	}
 
 	return nil
@@ -308,11 +310,11 @@ func (c *Cluster) GetDataSetInfo() (*DsInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Debugf("Got data set info: %s", res)
+	log.Debug("Got data set info", slog.String("response", string(res)))
 
 	err = json.Unmarshal(res, &di)
 	if err != nil {
-		log.Errorf("Failed to unmarshal data set info for cluster %s", c)
+		log.Error("Failed to unmarshal data set info for cluster", slog.String("cluster", c.String()))
 		return nil, err
 	}
 	return &di, nil
@@ -323,7 +325,7 @@ func (c *Cluster) GetExportPathById(id int) (string, error) {
 	// We only care about the paths component here, so ignore the rest
 	var exports any
 	url := fmt.Sprintf("%s/%d", exportPath, id)
-	log.Debugf("fetching export info from %s\n", url)
+	log.Debug("fetching export info", slog.String("url", url))
 	res, err := c.restGet(url)
 	if err != nil {
 		return "", err
@@ -351,18 +353,21 @@ func (c *Cluster) GetPPStats(dsName string) ([]PPStatResult, error) {
 
 	basePath := ppWorkloadPath + "?degraded=true&nodes=all&dataset=" + dsName
 	// Need special case for short last get
-	log.Infof("fetching PP stats from cluster %s", c)
+	log.Info("fetching PP stats from cluster", slog.String("cluster", c.String()))
 	// log.Debugf("cluster %s fetching %s", c, buffer.String())
 	resp, err := c.restGet(basePath)
 	if err != nil {
-		log.Errorf("Attempt to retrieve workload data for cluster %s, data set %s failed - %s", c, dsName, err)
+		log.Error("Attempt to retrieve workload data failed",
+			slog.String("cluster", c.String()),
+			slog.String("dataset", dsName),
+			slog.Any("error", err))
 		return nil, err
 	}
-	log.Debugf("workload response: %s", resp)
+	log.Debug("workload response", slog.String("response", string(resp)))
 	// Parse the result
 	results, err = parsePPStatResult(resp)
 	if err != nil {
-		log.Errorf("Unable to parse stat response - %s", err)
+		log.Error("Unable to parse stat response", slog.Any("error", err))
 		return nil, err
 	}
 
@@ -402,7 +407,7 @@ func (c *Cluster) restGet(endpoint string) ([]byte, error) {
 	var resp *http.Response
 
 	if c.AuthType == authtypeSession && time.Now().After(c.reauthTime) {
-		log.Infof("re-authenticating to cluster %s based on timer", c)
+		log.Info("re-authenticating to cluster based on timer", slog.String("cluster", c.String()))
 		if err = c.Authenticate(); err != nil {
 			return nil, err
 		}
@@ -431,7 +436,7 @@ func (c *Cluster) restGet(endpoint string) ([]byte, error) {
 				if c.AuthType == authtypeBasic {
 					return nil, fmt.Errorf("basic authentication for cluster %s failed - check username and password", c)
 				}
-				log.Noticef("Session-based authentication to cluster %s failed, attempting to re-authenticate", c)
+				log.Log(context.Background(), LevelNotice, "Session-based authentication to cluster failed, attempting to re-authenticate", slog.String("cluster", c.String()))
 				if err = c.Authenticate(); err != nil {
 					return nil, err
 				}
@@ -449,7 +454,7 @@ func (c *Cluster) restGet(endpoint string) ([]byte, error) {
 		if !isConnectionRefused(err) {
 			return nil, err
 		}
-		log.Errorf("Connection to %s refused, retrying in %d seconds", c.Hostname, retrySecs)
+		log.Error("Connection refused, retrying", slog.String("cluster", c.Hostname), slog.Int("retry_in_seconds", retrySecs))
 		time.Sleep(time.Duration(retrySecs) * time.Second)
 		retrySecs *= 2
 		if retrySecs > maxTimeoutSecs {

@@ -4,8 +4,8 @@ go 1.23.0
 
 require (
 	github.com/BurntSushi/toml v1.3.2
-	github.com/op/go-logging v0.0.0-20160315200505-970db520ece7
 	github.com/prometheus/client_golang v1.17.0
+	github.com/samber/slog-multi v1.6.0
 	golang.org/x/net v0.38.0
 )
 
@@ -14,6 +14,9 @@ require (
 	github.com/deepmap/oapi-codegen v1.12.4 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/influxdata/line-protocol v0.0.0-20200327222509-2487e7298839 // indirect
+	github.com/samber/lo v1.52.0 // indirect
+	github.com/samber/slog-common v0.19.0 // indirect
+	golang.org/x/text v0.23.0 // indirect
 )
 
 require (

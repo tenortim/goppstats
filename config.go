@@ -25,6 +25,7 @@ const defaultPreserveCase = false
 // config file structures
 type tomlConfig struct {
 	Global     globalConfig
+	Logging    loggingConfig    `toml:"logging"`
 	InfluxDB   influxDBConfig   `toml:"influxdb"`
 	InfluxDBv2 influxDBv2Config `toml:"influxdbv2"`
 	Prometheus prometheusConfig `toml:"prometheus"`
@@ -32,10 +33,15 @@ type tomlConfig struct {
 	Clusters   []clusterConf    `toml:"cluster"`
 }
 
+type loggingConfig struct {
+	LogFile       *string `toml:"logfile"`
+	LogFileFormat *string `toml:"log_file_format"`
+	LogLevel      *string `toml:"log_level"`
+	LogToStdout   bool    `toml:"log_to_stdout"`
+}
+
 type globalConfig struct {
 	Version             string  `toml:"version"`
-	LogFile             *string `toml:"logfile"`
-	LogToStdout         bool    `toml:"log_to_stdout"`
 	Processor           string  `toml:"stats_processor"`
 	ProcessorMaxRetries int     `toml:"stats_processor_max_retries"`
 	ProcessorRetryIntvl int     `toml:"stats_processor_retry_interval"`
