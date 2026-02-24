@@ -3,12 +3,11 @@ package main
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
-
-	//	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -49,8 +48,8 @@ type PrometheusSink struct {
 	fam map[string]*MetricFamily
 }
 
-const NAMESPACE = "isilon"
-const BASEPPNAME = "ppstat"
+const namespace = "isilon"
+const basePPName = "ppstat"
 
 // promMetric holds the Prometheus metadata exposed by the "/metrics"
 // endpoint for a given partitioned performance stat within a dataset
@@ -62,13 +61,9 @@ type promMetric struct {
 
 // promDsInternal holds the dataset and related Prometheus gauges etc.
 type promDsInternal struct {
-	ds       DsInfoEntry
-	basename string
-	metrics  map[string]promMetric
-	labels   []string
+	ds      DsInfoEntry
+	metrics map[string]promMetric
 }
-
-// var invalidNameCharRE = regexp.MustCompile(`[^a-zA-Z0-9_]`)
 
 // SampleID uniquely identifies a Sample
 type SampleID string
@@ -119,21 +114,20 @@ func makePromDataset(ds DsInfoEntry) promDsInternal {
 
 func (s *PrometheusSink) makePromMetrics(id int) {
 	dsi := s.dsm[id]
-	metricNames := dsi.ds.Metrics
+	// Sort a copy to avoid mutating the stored DsInfoEntry.Metrics backing array
+	metricNames := append([]string(nil), dsi.ds.Metrics...)
 	sort.Strings(metricNames)
-	basename := NAMESPACE + "_" + BASEPPNAME
+	basename := namespace + "_" + basePPName
 	for _, m := range metricNames {
 		basename = basename + "_" + m
 	}
-	dsi.basename = basename
-	dsi.labels = metricNames
 	labels := []string{"cluster", "node"}
 	// Deal with overflow buckets first
 	// These do not have the dataset breakout (since they collect/aggregate multiple values)
 	for _, wb := range workloadTypes {
 		for _, field := range ppFixedFields {
 			fieldKey := wb + "_" + field
-			description := fmt.Sprintf("pp dataset %d, overflow bucket %s, metric %s", dsi.ds.Id, wb, field)
+			description := fmt.Sprintf("pp dataset %d, overflow bucket %s, metric %s", dsi.ds.ID, wb, field)
 			name := basename + "_" + fieldKey
 			dsi.metrics[fieldKey] = promMetric{
 				name,
@@ -145,7 +139,7 @@ func (s *PrometheusSink) makePromMetrics(id int) {
 	// Create the regular buckets
 	labels = append(labels, metricNames...)
 	for _, field := range ppFixedFields {
-		description := fmt.Sprintf("pp dataset %d, metric %s", dsi.ds.Id, field)
+		description := fmt.Sprintf("pp dataset %d, metric %s", dsi.ds.ID, field)
 		name := basename + "_" + field
 		dsi.metrics[field] = promMetric{
 			name,
@@ -226,9 +220,8 @@ func startPromSdListener(conf tomlConfig) error {
 		return fmt.Errorf("error creating listener for Prometheus HTTP SD: %w", err)
 	}
 	log.Info("Starting Prometheus HTTP SD listener", slog.String("addr", addr))
-	// XXX improve error handling here?
 	go func() {
-		if err := http.Serve(listener, mux); err != nil {
+		if err := http.Serve(listener, mux); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("Prometheus HTTP SD listener error", slog.Any("error", err))
 		}
 	}()
@@ -293,7 +286,7 @@ func (s *PrometheusSink) Init(cluster *Cluster, config *tomlConfig, ci int) erro
 	if port == nil {
 		return fmt.Errorf("prometheus plugin initialization failed - missing port definition for cluster %v", cluster)
 	}
-	pc := s.client
+	pc := &s.client
 	pc.ListenPort = *port
 
 	if promconf.Authenticated {
@@ -305,7 +298,9 @@ func (s *PrometheusSink) Init(cluster *Cluster, config *tomlConfig, ci int) erro
 
 	registry := prometheus.NewRegistry()
 	pc.registry = registry
-	registry.Register(s)
+	if err := registry.Register(s); err != nil {
+		return fmt.Errorf("failed to register Prometheus collector: %w", err)
+	}
 
 	s.fam = make(map[string]*MetricFamily)
 
@@ -343,7 +338,7 @@ func (s *PrometheusSink) UpdateDatasets(di *DsInfo) {
 		// First time through so allocate and set up the maps and gauges
 		s.dsm = make(promDsMap)
 		for _, ds := range di.Datasets {
-			s.CreateDataset(ds.Id, ds)
+			s.CreateDataset(ds.ID, ds)
 		}
 		return
 	}
@@ -353,12 +348,12 @@ func (s *PrometheusSink) UpdateDatasets(di *DsInfo) {
 	// make a map of the new dataset metadata
 	nsdMap := make(map[int]DsInfoEntry)
 	for _, v := range di.Datasets {
-		nsdMap[v.Id] = v
+		nsdMap[v.ID] = v
 	}
 
 	// compare each possible slot to what we currently have
 	// we are going to assert/assume that the System dataset is immutable so skip checking dataset 0
-	for id := 1; id <= MaxDsId; id++ {
+	for id := 1; id <= MaxDsID; id++ {
 		cur, ok := s.dsm[id]
 		if ok {
 			new, ok := nsdMap[id]
@@ -402,7 +397,6 @@ func (s *PrometheusSink) Expire() {
 	now := time.Now()
 	for name, family := range s.fam {
 		for key, sample := range family.Samples {
-			// if s.ExpirationInterval.Duration != 0 && now.After(sample.Expiration) {
 			if now.After(sample.Expiration) {
 				for k := range sample.Labels {
 					family.LabelSet[k]--
@@ -449,6 +443,7 @@ func (s *PrometheusSink) Collect(ch chan<- prometheus.Metric) {
 					slog.String("key", name),
 					slog.Any("labels", labels),
 					slog.Any("error", err))
+				continue
 			}
 
 			metric = prometheus.NewMetricWithTimestamp(sample.Timestamp, metric)
@@ -456,12 +451,6 @@ func (s *PrometheusSink) Collect(ch chan<- prometheus.Metric) {
 		}
 	}
 }
-
-// XXX We will use this if/when we convert the InfluxDB collector to use the full names
-// those names will be separated by periods, and this will convert them.
-// func sanitize(value string) string {
-// 	return invalidNameCharRE.ReplaceAllString(value, "_")
-// }
 
 // CreateSampleID creates a SampleID based on the tags of a OneFS.Metric.
 func CreateSampleID(tags map[string]string) SampleID {
@@ -474,6 +463,11 @@ func CreateSampleID(tags map[string]string) SampleID {
 }
 
 func addSample(fam *MetricFamily, sample *Sample, sampleID SampleID) {
+	if old, ok := fam.Samples[sampleID]; ok {
+		for k := range old.Labels {
+			fam.LabelSet[k]--
+		}
+	}
 	for k := range sample.Labels {
 		fam.LabelSet[k]++
 	}
@@ -505,7 +499,7 @@ func (s *PrometheusSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) er
 
 	now := time.Now()
 
-	dsi := s.dsm[ds.Id]
+	dsi := s.dsm[ds.ID]
 	for _, ppstat := range ppstats {
 		fieldMap := fieldsForPPStat(ppstat)
 		tags := tagsForPPStat(ppstat, s.cluster, s.exports)
@@ -518,7 +512,7 @@ func (s *PrometheusSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) er
 		// "Pinned" is special. It is effectively a regular stat gather not a separate bucket.
 		// We do add a label to show whether it was a pinned workflow or not.
 		workloadType := ppstat.WorkloadType
-		if workloadType != nil && *workloadType != W_PINNED {
+		if workloadType != nil && *workloadType != wPinned {
 			// validate the return
 			if !isValidWorkloadType(*workloadType) {
 				log.Error("invalid workload type found in output, ignoring", slog.String("workload_type", *workloadType))
@@ -529,7 +523,7 @@ func (s *PrometheusSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) er
 			for _, label := range dsi.ds.Metrics {
 				labels[label] = tags[label]
 			}
-			if workloadType != nil && *workloadType == W_PINNED {
+			if workloadType != nil && *workloadType == wPinned {
 				labels["pinned"] = "true"
 			} else {
 				labels["pinned"] = "false"
@@ -539,15 +533,14 @@ func (s *PrometheusSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) er
 		for _, field := range ppFixedFields {
 			// overflow bucket keys are of the form "<bucket>_<field>"
 			fieldKey := field
-			if workloadType != nil && *workloadType != W_PINNED {
+			if workloadType != nil && *workloadType != wPinned {
 				fieldKey = *workloadType + "_" + field
 			}
 			fullname := dsi.metrics[fieldKey].name
 			description := dsi.metrics[fieldKey].description
 			value, ok := fieldMap[field].(float64)
 			if !ok {
-				log.Error("Unexpected null value for field", slog.Any("field", field))
-				panic("unexpected null value")
+				return fmt.Errorf("unexpected null value for field %q in dataset %q", field, ds.Name)
 			}
 			sample := &Sample{
 				Labels:     labels,

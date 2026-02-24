@@ -10,39 +10,39 @@ import (
 
 // names of the statistics that each partitioned performance metric collects
 const (
-	F_BYTESIN  = "bytes_in"
-	F_BYTESOUT = "bytes_out"
-	F_READS    = "reads"
-	F_WRITES   = "writes"
-	F_OPS      = "ops"
-	F_L2       = "l2"
-	F_L3       = "l3"
-	F_CPU      = "cpu"
-	F_LATREAD  = "latency_read"
-	F_LATWRITE = "latency_write"
-	F_LATOTHER = "latency_other"
+	fBytesIn  = "bytes_in"
+	fBytesOut = "bytes_out"
+	fReads    = "reads"
+	fWrites   = "writes"
+	fOps      = "ops"
+	fL2       = "l2"
+	fL3       = "l3"
+	fCPU      = "cpu"
+	fLatRead  = "latency_read"
+	fLatWrite = "latency_write"
+	fLatOther = "latency_other"
 )
 
 // ppFixedFields contains the names of the performance statistics that partitioned performance collects
-var ppFixedFields = []string{F_BYTESIN, F_BYTESOUT, F_READS, F_WRITES, F_OPS, F_L2, F_L3, F_CPU, F_LATREAD, F_LATWRITE, F_LATOTHER}
+var ppFixedFields = []string{fBytesIn, fBytesOut, fReads, fWrites, fOps, fL2, fL3, fCPU, fLatRead, fLatWrite, fLatOther}
 
 // workload types: Additional Excluded Overaccounted System Unknown
 const (
-	W_ADDITIONAL    = "Additional"
-	W_EXCLUDED      = "Excluded"
-	W_OVERACCOUNTED = "Overaccounted"
-	W_SYSTEM        = "System"
-	W_UNKNOWN       = "Unknown"
-	W_PINNED        = "Pinned"
+	wAdditional    = "Additional"
+	wExcluded      = "Excluded"
+	wOveraccounted = "Overaccounted"
+	wSystem        = "System"
+	wUnknown       = "Unknown"
+	wPinned        = "Pinned"
 )
 
 // workloadTypes contains the names of the 5 "overflow" buckets for any given dataset
-var workloadTypes = []string{W_ADDITIONAL, W_EXCLUDED, W_OVERACCOUNTED, W_SYSTEM, W_UNKNOWN}
+var workloadTypes = []string{wAdditional, wExcluded, wOveraccounted, wSystem, wUnknown}
 
 // isValidWorkloadType takes a workload_type string and validates that it is one of the 5 "overflow" buckets
 func isValidWorkloadType(t string) bool {
 	switch t {
-	case W_ADDITIONAL, W_EXCLUDED, W_OVERACCOUNTED, W_SYSTEM, W_UNKNOWN:
+	case wAdditional, wExcluded, wOveraccounted, wSystem, wUnknown:
 		return true
 	}
 	return false
@@ -74,17 +74,17 @@ func fieldsForPPStat(ppstat PPStatResult) ptFields {
 	fields := make(ptFields)
 
 	// Required fields
-	fields[F_BYTESIN] = ppstat.BytesIn
-	fields[F_BYTESOUT] = ppstat.BytesOut
-	fields[F_READS] = ppstat.Reads
-	fields[F_WRITES] = ppstat.Writes
-	fields[F_OPS] = ppstat.Ops
-	fields[F_L2] = ppstat.L2
-	fields[F_L3] = ppstat.L3
-	fields[F_CPU] = ppstat.CPU
-	fields[F_LATREAD] = ppstat.LatencyRead
-	fields[F_LATWRITE] = ppstat.LatencyWrite
-	fields[F_LATOTHER] = ppstat.LatencyOther
+	fields[fBytesIn] = ppstat.BytesIn
+	fields[fBytesOut] = ppstat.BytesOut
+	fields[fReads] = ppstat.Reads
+	fields[fWrites] = ppstat.Writes
+	fields[fOps] = ppstat.Ops
+	fields[fL2] = ppstat.L2
+	fields[fL3] = ppstat.L3
+	fields[fCPU] = ppstat.CPU
+	fields[fLatRead] = ppstat.LatencyRead
+	fields[fLatWrite] = ppstat.LatencyWrite
+	fields[fLatOther] = ppstat.LatencyOther
 
 	return fields
 }
@@ -104,7 +104,7 @@ func tagsForPPStat(ppstat PPStatResult, cluster *Cluster, exports exportMap) ptT
 			path, found := exports.pathById[id]
 			if !found {
 				var err error
-				path, err = cluster.GetExportPathById(id)
+				path, err = cluster.GetExportPathByID(id)
 				if err != nil {
 					log.Error("failed to lookup export id", slog.Int("export_id", id), slog.Any("error", err))
 					path = "unknown (lookup failed)"

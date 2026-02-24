@@ -39,7 +39,7 @@ func (s *InfluxDBv2Sink) Init(cluster *Cluster, config *tomlConfig, ci int) erro
 	}
 	token, err = secretFromEnv(token)
 	if err != nil {
-		return fmt.Errorf("unable to retrieve InfluxDBv2 token from environment: %v", err.Error())
+		return fmt.Errorf("unable to retrieve InfluxDBv2 token from environment: %w", err)
 	}
 	client := influxdb2.NewClient(url, token)
 	// ping the database to ensure we can connect
@@ -47,7 +47,7 @@ func (s *InfluxDBv2Sink) Init(cluster *Cluster, config *tomlConfig, ci int) erro
 	defer cancel()
 	ok, err := client.Ping(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to ping InfluxDBv2 - %v", err.Error())
+		return fmt.Errorf("failed to ping InfluxDBv2: %w", err)
 	}
 	if !ok {
 		return fmt.Errorf("InfluxDBv2 ping failed - server not reachable")

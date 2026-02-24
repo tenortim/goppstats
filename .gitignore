@@ -2,3 +2,4 @@ goppstats
 goppstats.exe
 goppstats.log
 *.code-workspace
+.claude/settings.local.json

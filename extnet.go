@@ -32,7 +32,7 @@ func ListExternalIPs() ([]net.IP, error) {
 	var ips []net.IP
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return nil, fmt.Errorf("failed to enumerate network interfaces: %v", err)
+		return nil, fmt.Errorf("failed to enumerate network interfaces: %w", err)
 	}
 	for _, i := range ifaces {
 		if !IsExternalInterface(i.Name) {
@@ -41,7 +41,7 @@ func ListExternalIPs() ([]net.IP, error) {
 		}
 		addrs, err := i.Addrs()
 		if err != nil {
-			return nil, fmt.Errorf("failed to enumerate network addresses: %v", err)
+			return nil, fmt.Errorf("failed to enumerate network addresses: %w", err)
 		}
 		for _, addr := range addrs {
 			var ip net.IP
@@ -70,11 +70,12 @@ func findExternalAddr() (string, error) {
 
 	ips, err := ListExternalIPs()
 	if err != nil {
-		return "", fmt.Errorf("unable to list external IP addresses: %v", err)
+		return "", fmt.Errorf("unable to list external IP addresses: %w", err)
 	}
 	for _, ip := range ips {
 		if IsIPv4(ip.String()) {
 			listenAddr = ip.String()
+			break
 		}
 	}
 	if listenAddr == "" {

@@ -27,10 +27,10 @@ const defaultAuthType = authtypeSession
 
 // Config file plugin names
 const (
-	DISCARD_PLUGIN_NAME  = "discard"
-	INFLUX_PLUGIN_NAME   = "influxdb"
-	INFLUXv2_PLUGIN_NAME = "influxdbv2"
-	PROM_PLUGIN_NAME     = "prometheus"
+	discardPluginName  = "discard"
+	influxPluginName   = "influxdb"
+	influxV2PluginName = "influxdbv2"
+	promPluginName     = "prometheus"
 )
 
 func die(msg string, args ...any) {
@@ -84,8 +84,10 @@ func main() {
 
 	validateConfigVersion(conf.Global.Version)
 
-	if conf.Global.Processor == PROM_PLUGIN_NAME && conf.PromSD.Enabled {
-		startPromSdListener(conf)
+	if conf.Global.Processor == promPluginName && conf.PromSD.Enabled {
+		if err := startPromSdListener(conf); err != nil {
+			log.Error("Failed to start Prometheus SD listener", slog.String("error", err.Error()))
+		}
 	}
 
 	// start collecting from each defined and enabled cluster
@@ -115,12 +117,12 @@ func statsloop(config *tomlConfig, ci int) {
 	cc := config.Clusters[ci]
 	gc := config.Global
 
-	var normalize bool
+	var preserveCase bool
 
 	if cc.PreserveCase == nil { // check for cluster overwrite setting of PreserveCase, default and to global setting
-		normalize = gc.PreserveCase
+		preserveCase = gc.PreserveCase
 	} else {
-		normalize = *cc.PreserveCase
+		preserveCase = *cc.PreserveCase
 	}
 
 	// Connect to the cluster
@@ -159,7 +161,7 @@ func statsloop(config *tomlConfig, ci int) {
 		Port:         8080,
 		VerifySSL:    cc.SSLCheck,
 		maxRetries:   gc.MaxRetries,
-		PreserveCase: normalize,
+		PreserveCase: preserveCase,
 	}
 	if err = c.Connect(); err != nil {
 		log.Error("Connection to cluster failed", slog.String("cluster", c.Hostname), slog.Any("error", err))
@@ -266,13 +268,13 @@ func statsloop(config *tomlConfig, ci int) {
 // return a DBWriter for the given backend name
 func getDBWriter(sp string) (DBWriter, error) {
 	switch sp {
-	case DISCARD_PLUGIN_NAME:
+	case discardPluginName:
 		return GetDiscardWriter(), nil
-	case INFLUX_PLUGIN_NAME:
+	case influxPluginName:
 		return GetInfluxDBWriter(), nil
-	case INFLUXv2_PLUGIN_NAME:
+	case influxV2PluginName:
 		return GetInfluxDBv2Writer(), nil
-	case PROM_PLUGIN_NAME:
+	case promPluginName:
 		return GetPrometheusWriter(), nil
 	default:
 		return nil, fmt.Errorf("unsupported backend plugin %q", sp)

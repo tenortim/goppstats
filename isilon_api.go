@@ -26,7 +26,7 @@ const MaxAPIPathLen = 8198
 
 // For OneFS releases up to and including 9.12, the API supports the System
 // dataset (0), and up to four user-defined datasets
-const MaxDsId = 4
+const MaxDsID = 4
 
 // AuthInfo provides username and password to authenticate
 // against the OneFS API
@@ -58,7 +58,7 @@ type DsInfoEntry struct {
 	CreationTime  int      `json:"creation_time"`
 	FilterCount   int      `json:"filter_count"`
 	Filters       []string `json:"filters"`
-	Id            int      `json:"id"`
+	ID            int      `json:"id"`
 	Metrics       []string `json:"metrics"`
 	Name          string   `json:"name"`
 	StatKey       string   `json:"statkey"`
@@ -219,14 +219,14 @@ func (c *Cluster) Authenticate() error {
 	defer resp.Body.Close()
 	// 201(StatusCreated) is success
 	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("Authenticate: auth failed - %s", resp.Status)
+		return fmt.Errorf("auth failed: %s", resp.Status)
 	}
 	// parse out time limit so we can reauth when necessary
 	dec := json.NewDecoder(resp.Body)
 	var ar map[string]any
 	err = dec.Decode(&ar)
 	if err != nil {
-		return fmt.Errorf("Authenticate: unable to parse auth response - %s", err)
+		return fmt.Errorf("unable to parse auth response: %s", err)
 	}
 	// drain any other output
 	io.Copy(io.Discard, resp.Body)
@@ -271,16 +271,27 @@ func (c *Cluster) GetClusterConfig() error {
 	if err != nil {
 		return err
 	}
-	m := v.(map[string]any)
-	version := m["onefs_version"]
-	r := version.(map[string]any)
-	release := r["version"]
-	rel := release.(string)
+	m, ok := v.(map[string]any)
+	if !ok {
+		return fmt.Errorf("unexpected JSON structure for cluster config")
+	}
+	version, ok := m["onefs_version"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("unexpected type for onefs_version field")
+	}
+	rel, ok := version["version"].(string)
+	if !ok {
+		return fmt.Errorf("unexpected type for version field")
+	}
 	c.OSVersion = rel
+	name, ok := m["name"].(string)
+	if !ok {
+		return fmt.Errorf("unexpected type for name field")
+	}
 	if c.PreserveCase {
-		c.ClusterName = m["name"].(string)
+		c.ClusterName = name
 	} else {
-		c.ClusterName = strings.ToLower(m["name"].(string))
+		c.ClusterName = strings.ToLower(name)
 	}
 	return nil
 }
@@ -288,17 +299,16 @@ func (c *Cluster) GetClusterConfig() error {
 // Connect establishes the initial network connection to the cluster,
 // then pulls the cluster config info to get the real cluster name
 func (c *Cluster) Connect() error {
-	var err error
-	if err = c.initialize(); err != nil {
-		return err
+	if err := c.initialize(); err != nil {
+		return fmt.Errorf("initialize: %w", err)
 	}
 	if c.AuthType == authtypeSession {
-		if err = c.Authenticate(); err != nil {
-			return err
+		if err := c.Authenticate(); err != nil {
+			return fmt.Errorf("authenticate: %w", err)
 		}
 	}
-	if err = c.GetClusterConfig(); err != nil {
-		return err
+	if err := c.GetClusterConfig(); err != nil {
+		return fmt.Errorf("get cluster config: %w", err)
 	}
 	return nil
 }
@@ -320,8 +330,8 @@ func (c *Cluster) GetDataSetInfo() (*DsInfo, error) {
 	return &di, nil
 }
 
-// GetExportPathById returns the first defined path for the given NFS export id or an error
-func (c *Cluster) GetExportPathById(id int) (string, error) {
+// GetExportPathByID returns the first defined path for the given NFS export id or an error
+func (c *Cluster) GetExportPathByID(id int) (string, error) {
 	// We only care about the paths component here, so ignore the rest
 	var exports any
 	url := fmt.Sprintf("%s/%d", exportPath, id)
@@ -334,16 +344,32 @@ func (c *Cluster) GetExportPathById(id int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	ea1 := exports.(map[string]any)
-	ea2 := ea1["exports"].([]any)
-	export := ea2[0].(map[string]any)
+	ea1, ok := exports.(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("unexpected JSON structure for export %d", id)
+	}
+	ea2, ok := ea1["exports"].([]any)
+	if !ok {
+		return "", fmt.Errorf("unexpected type for exports field for export %d", id)
+	}
+	export, ok := ea2[0].(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("unexpected type for export entry %d", id)
+	}
 	paths := export["paths"]
 	if paths == nil {
 		return "", fmt.Errorf("no paths found for export id %d", id)
 	}
+	pathList, ok := paths.([]any)
+	if !ok || len(pathList) == 0 {
+		return "", fmt.Errorf("unexpected type or empty paths for export id %d", id)
+	}
 	// Just return the first path, even if there are multiple
-	path := paths.([]any)[0]
-	return path.(string), nil
+	path, ok := pathList[0].(string)
+	if !ok {
+		return "", fmt.Errorf("unexpected type for path entry in export id %d", id)
+	}
+	return path, nil
 }
 
 // GetPPStats queries the API for the specified Partitioned Performance data set and returns
@@ -352,9 +378,7 @@ func (c *Cluster) GetPPStats(dsName string) ([]PPStatResult, error) {
 	var results []PPStatResult
 
 	basePath := ppWorkloadPath + "?degraded=true&nodes=all&dataset=" + dsName
-	// Need special case for short last get
 	log.Info("fetching PP stats from cluster", slog.String("cluster", c.String()))
-	// log.Debugf("cluster %s fetching %s", c, buffer.String())
 	resp, err := c.restGet(basePath)
 	if err != nil {
 		log.Error("Attempt to retrieve workload data failed",
@@ -445,9 +469,8 @@ func (c *Cluster) restGet(endpoint string) ([]byte, error) {
 					return nil, err
 				}
 				continue
-				// TODO handle repeated auth failures to avoid panic
 			}
-			return nil, fmt.Errorf("Cluster %s returned unexpected HTTP response: %v", c, resp.Status)
+			return nil, fmt.Errorf("cluster %s returned unexpected HTTP response: %v", c, resp.Status)
 		}
 		// assert err != nil
 		// TODO - consider adding more retryable cases e.g. temporary DNS hiccup
@@ -466,7 +489,7 @@ func (c *Cluster) restGet(endpoint string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Cluster %s returned unexpected HTTP response: %v", c, resp.Status)
+		return nil, fmt.Errorf("cluster %s returned unexpected HTTP response: %v", c, resp.Status)
 	}
 	body, err := io.ReadAll(resp.Body)
 	return body, err

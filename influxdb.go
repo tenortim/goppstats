@@ -43,27 +43,27 @@ func (s *InfluxDBSink) Init(cluster *Cluster, config *tomlConfig, ci int) error 
 		password = ic.Password
 		password, err = secretFromEnv(password)
 		if err != nil {
-			return fmt.Errorf("unable to retrieve InfluxDB password from environment: %v", err.Error())
+			return fmt.Errorf("unable to retrieve InfluxDB password from environment: %w", err)
 		}
 	}
 
-	client, err := client.NewHTTPClient(client.HTTPConfig{
+	dbClient, err := client.NewHTTPClient(client.HTTPConfig{
 		Addr:     url,
 		Username: username,
 		Password: password,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create InfluxDB client - %v", err.Error())
+		return fmt.Errorf("failed to create InfluxDB client: %w", err)
 	}
 	// ping the database to ensure we can connect
-	responseTime, response, err := client.Ping(30 * time.Second)
+	responseTime, response, err := dbClient.Ping(30 * time.Second)
 	if err != nil {
-		return fmt.Errorf("failed to ping InfluxDB - %v", err.Error())
+		return fmt.Errorf("failed to ping InfluxDB: %w", err)
 	}
 	log.Log(context.Background(), LevelNotice, "successfully connected to InfluxDB",
 		slog.String("response", response),
 		slog.Duration("response_time", responseTime))
-	s.client = client
+	s.client = dbClient
 	s.exports = newExportMap(config.Global.LookupExportIds)
 	return nil
 }
@@ -79,7 +79,7 @@ func (s *InfluxDBSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) erro
 
 	bp, err := client.NewBatchPoints(s.bpConfig)
 	if err != nil {
-		return fmt.Errorf("unable to create InfluxDB batch points - %v", err.Error())
+		return fmt.Errorf("unable to create InfluxDB batch points: %w", err)
 	}
 	for _, ppstat := range ppstats {
 		fields := fieldsForPPStat(ppstat)
@@ -101,7 +101,7 @@ func (s *InfluxDBSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) erro
 	// write the batch
 	err = s.client.Write(bp)
 	if err != nil {
-		return fmt.Errorf("failed to write batch of points - %v", err.Error())
+		return fmt.Errorf("failed to write batch of points: %w", err)
 	}
 	return nil
 }
