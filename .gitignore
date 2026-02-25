@@ -1,5 +1,6 @@
 goppstats
 goppstats.exe
 goppstats.log
+.vscode
 *.code-workspace
 .claude/settings.local.json
