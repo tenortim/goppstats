@@ -48,7 +48,7 @@ type globalConfig struct {
 	ProcessorRetryIntvl int     `toml:"stats_processor_retry_interval"`
 	MinUpdateInvtl      int     `toml:"min_update_interval_override"`
 	MaxRetries          int     `toml:"max_retries"`
-	LookupExportIds     bool    `toml:"lookup_export_ids"`
+	LookupExportIDs     bool    `toml:"lookup_export_ids"`
 	PreserveCase        bool    `toml:"preserve_case"` // enable/disable normalization of Cluster Names
 }
 

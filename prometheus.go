@@ -173,24 +173,24 @@ type httpSdConf struct {
 }
 
 func (h *httpSdConf) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var listenAddrs string
 	w.Header().Set("Content-Type", "application/json")
-	sdstr1 := `[
+	var sb strings.Builder
+	sb.WriteString(`[
 	{
-		"targets": [`
+		"targets": [`)
 	for i, port := range h.ListenPorts {
 		if i != 0 {
-			listenAddrs += ", "
+			sb.WriteString(", ")
 		}
-		listenAddrs += fmt.Sprintf("\"%s:%d\"", h.ListenIP, port)
+		fmt.Fprintf(&sb, "\"%s:%d\"", h.ListenIP, port)
 	}
-	sdstr2 := `],
+	sb.WriteString(`],
 		"labels": {
 			"__meta_prometheus_job": "isilon_ppstats"
 		}
 	}
-]`
-	_, _ = w.Write([]byte(sdstr1 + listenAddrs + sdstr2))
+]`)
+	_, _ = w.Write([]byte(sb.String()))
 }
 
 // Start an http listener in a goroutine to server Prometheus HTTP SD requests
@@ -266,7 +266,7 @@ func (p *PrometheusClient) Connect() error {
 		} else {
 			err = p.server.Serve(listener)
 		}
-		if err != nil && err != http.ErrServerClosed {
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("error creating prometheus metric endpoint", slog.Any("error", err))
 		}
 	}()
@@ -281,7 +281,7 @@ func (s *PrometheusSink) Init(cluster *Cluster, config *tomlConfig, ci int) erro
 	s.cluster = cluster
 	promconf := config.Prometheus
 	gc := config.Global
-	s.exports = newExportMap(gc.LookupExportIds)
+	s.exports = newExportMap(gc.LookupExportIDs)
 	port := config.Clusters[ci].PrometheusPort
 	if port == nil {
 		return fmt.Errorf("prometheus plugin initialization failed - missing port definition for cluster %v", cluster)
@@ -334,6 +334,8 @@ func (s *PrometheusSink) ClearDataset(id int) {
 
 // UpdateDatasets updates the back end view of the current dataset definitions.
 func (s *PrometheusSink) UpdateDatasets(di *DsInfo) {
+	s.Lock()
+	defer s.Unlock()
 	if s.dsm == nil {
 		// First time through so allocate and set up the maps and gauges
 		s.dsm = make(promDsMap)

@@ -64,7 +64,7 @@ func main() {
 
 	if conf.Global.Processor == promPluginName && conf.PromSD.Enabled {
 		if err := startPromSdListener(conf); err != nil {
-			log.Error("Failed to start Prometheus SD listener", slog.String("error", err.Error()))
+			log.Error("Failed to start Prometheus SD listener", slog.Any("error", err))
 		}
 	}
 

@@ -195,14 +195,15 @@ func (c *Cluster) Authenticate() error {
 	// POST our authentication request to the API
 	// This may be our first connection so we'll retry here in the hope that if
 	// we can't connect to one node, another may be responsive
-	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewBuffer(b))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Content-Type", "application/json")
+	var req *http.Request
 	retrySecs := 1
 	for i := 1; i <= c.maxRetries; i++ {
+		req, err = http.NewRequest(http.MethodPost, u.String(), bytes.NewBuffer(b))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("User-Agent", userAgent)
+		req.Header.Set("Content-Type", "application/json")
 		resp, err = c.client.Do(req)
 		if err == nil {
 			break
@@ -215,7 +216,7 @@ func (c *Cluster) Authenticate() error {
 		}
 	}
 	if err != nil {
-		return fmt.Errorf("max retries exceeded for connect to %s, aborting connection attempt", c.Hostname)
+		return fmt.Errorf("max retries exceeded connecting to %s: %w", c.Hostname, err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	// 201(StatusCreated) is success
@@ -227,14 +228,19 @@ func (c *Cluster) Authenticate() error {
 	var ar map[string]any
 	err = dec.Decode(&ar)
 	if err != nil {
-		return fmt.Errorf("unable to parse auth response: %s", err)
+		return fmt.Errorf("unable to parse auth response: %w", err)
 	}
 	// drain any other output
 	_, _ = io.Copy(io.Discard, resp.Body)
 	var timeout int
 	ta, ok := ar["timeout_absolute"]
 	if ok {
-		timeout = int(ta.(float64))
+		if f, ok := ta.(float64); ok {
+			timeout = int(f)
+		} else {
+			log.Warn("unexpected type for timeout_absolute in auth response, using default")
+			timeout = 14400
+		}
 	} else {
 		// This shouldn't happen, but just set it to a sane default
 		log.Warn("authentication API did not return timeout value, using default")
@@ -350,8 +356,8 @@ func (c *Cluster) GetExportPathByID(id int) (string, error) {
 		return "", fmt.Errorf("unexpected JSON structure for export %d", id)
 	}
 	ea2, ok := ea1["exports"].([]any)
-	if !ok {
-		return "", fmt.Errorf("unexpected type for exports field for export %d", id)
+	if !ok || len(ea2) == 0 {
+		return "", fmt.Errorf("unexpected type or empty exports field for export %d", id)
 	}
 	export, ok := ea2[0].(map[string]any)
 	if !ok {
@@ -448,7 +454,7 @@ func (c *Cluster) restGet(endpoint string) ([]byte, error) {
 	}
 
 	retrySecs := 1
-	for i := 1; i < c.maxRetries; i++ {
+	for i := 1; i <= c.maxRetries; i++ {
 		resp, err = c.client.Do(req)
 		if err == nil {
 			// We got a valid http response

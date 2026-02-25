@@ -9,6 +9,7 @@ import (
 
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/influxdata/influxdb-client-go/v2/api"
+	"github.com/influxdata/influxdb-client-go/v2/api/write"
 )
 
 // InfluxDBv2Sink defines the data to allow us talk to an InfluxDBv2 database
@@ -16,7 +17,7 @@ type InfluxDBv2Sink struct {
 	clusterName string
 	cluster     *Cluster // needed to enable per-cluster export id lookup
 	c           influxdb2.Client
-	writeAPI    api.WriteAPI
+	writeAPI    api.WriteAPIBlocking
 	exports     exportMap
 }
 
@@ -53,20 +54,10 @@ func (s *InfluxDBv2Sink) Init(cluster *Cluster, config *tomlConfig, ci int) erro
 		return fmt.Errorf("InfluxDBv2 ping failed - server not reachable")
 	}
 	log.Log(context.Background(), LevelNotice, "successfully connected to InfluxDBv2", slog.String("cluster", cluster.ClusterName))
-	writeAPI := client.WriteAPI(ic.Org, ic.Bucket)
 	s.c = client
-	s.writeAPI = writeAPI
+	s.writeAPI = client.WriteAPIBlocking(ic.Org, ic.Bucket)
 
-	// Get errors channel
-	errorsCh := writeAPI.Errors()
-	// Create goroutine for reading and logging errors
-	go func() {
-		for err := range errorsCh {
-			log.Error("InfluxDB async write error", slog.String("cluster", cluster.ClusterName), slog.Any("error", err))
-		}
-	}()
-
-	s.exports = newExportMap(config.Global.LookupExportIds)
+	s.exports = newExportMap(config.Global.LookupExportIDs)
 	return nil
 }
 
@@ -79,6 +70,7 @@ func (s *InfluxDBv2Sink) UpdateDatasets(di *DsInfo) {
 func (s *InfluxDBv2Sink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) error {
 	keyName := ds.StatKey
 
+	var pts []*write.Point
 	for _, ppstat := range ppstats {
 		fields := fieldsForPPStat(ppstat)
 		log.Debug("got fields", slog.Any("fields", fields))
@@ -88,10 +80,10 @@ func (s *InfluxDBv2Sink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) er
 		tags["node"] = strconv.Itoa(ppstat.Node)
 		log.Debug("got tags", slog.Any("tags", tags))
 
-		pt := influxdb2.NewPoint(keyName, tags, fields, time.Unix(ppstat.UnixTime, 0).UTC())
-		s.writeAPI.WritePoint(pt)
+		pts = append(pts, influxdb2.NewPoint(keyName, tags, fields, time.Unix(ppstat.UnixTime, 0).UTC()))
 	}
-	// write the batch
-	s.writeAPI.Flush()
+	if err := s.writeAPI.WritePoint(context.Background(), pts...); err != nil {
+		return fmt.Errorf("InfluxDBv2 write failed: %w", err)
+	}
 	return nil
 }

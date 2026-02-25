@@ -89,7 +89,7 @@ func fieldsForPPStat(ppstat PPStatResult) ptFields {
 	return fields
 }
 
-// TagsForPPStat dissects the PPStatResult and converts it to the tags that
+// tagsForPPStat dissects the PPStatResult and converts it to the tags that
 // match the original workload definition i.e.
 // export_id groupname local_address path protocol remote_address share_name username zone_name
 // squash some of the fields e.g. Username vs UserID vs UserSID

@@ -64,7 +64,7 @@ func (s *InfluxDBSink) Init(cluster *Cluster, config *tomlConfig, ci int) error 
 		slog.String("response", response),
 		slog.Duration("response_time", responseTime))
 	s.client = dbClient
-	s.exports = newExportMap(config.Global.LookupExportIds)
+	s.exports = newExportMap(config.Global.LookupExportIDs)
 	return nil
 }
 
