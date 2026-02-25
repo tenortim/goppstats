@@ -4,3 +4,5 @@ goppstats.log
 .vscode
 *.code-workspace
 .claude/settings.local.json
+# Added by goreleaser init:
+dist/
