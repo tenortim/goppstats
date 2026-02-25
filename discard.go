@@ -16,12 +16,12 @@ func (s *DiscardSink) Init(cluster *Cluster, _ *tomlConfig, _ int) error {
 	return nil
 }
 
-// UpdatesDatasets updates the back end view of the current dataset definitions
+// UpdateDatasets updates the back end view of the current dataset definitions.
 func (s *DiscardSink) UpdateDatasets(ds *DsInfo) {
 	// empty
 }
 
-// WriteStats takes an array of PPStatResults and discards them
+// WritePPStats takes an array of PPStatResults and discards them.
 func (s *DiscardSink) WritePPStats(ds DsInfoEntry, stats []PPStatResult) error {
 	// consider debug/trace statement here for stat count
 	return nil

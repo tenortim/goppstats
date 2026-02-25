@@ -51,7 +51,7 @@ func isValidWorkloadType(t string) bool {
 // exportMap holds a map of NFS exports ids to their corresponding NFS exports paths
 type exportMap struct {
 	enabled  bool
-	pathById map[int]string
+	pathByID map[int]string
 }
 
 // newExportMap creates a map of NFS export ids to their corresponding NFS exports paths
@@ -59,7 +59,7 @@ func newExportMap(enabled bool) exportMap {
 	m := new(exportMap)
 	m.enabled = enabled
 	if enabled {
-		m.pathById = make(map[int]string)
+		m.pathByID = make(map[int]string)
 	}
 	return *m
 }
@@ -101,7 +101,7 @@ func tagsForPPStat(ppstat PPStatResult, cluster *Cluster, exports exportMap) ptT
 		id := *ppstat.ExportID
 		tags["export_id"] = strconv.Itoa(id)
 		if exports.enabled {
-			path, found := exports.pathById[id]
+			path, found := exports.pathByID[id]
 			if !found {
 				var err error
 				path, err = cluster.GetExportPathByID(id)
@@ -109,7 +109,7 @@ func tagsForPPStat(ppstat PPStatResult, cluster *Cluster, exports exportMap) ptT
 					log.Error("failed to lookup export id", slog.Int("export_id", id), slog.Any("error", err))
 					path = "unknown (lookup failed)"
 				}
-				exports.pathById[id] = path
+				exports.pathByID[id] = path
 			}
 			tags["export_path"] = path
 		}

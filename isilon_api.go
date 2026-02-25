@@ -24,8 +24,9 @@ import (
 // MaxAPIPathLen is the limit on the length of an API request URL
 const MaxAPIPathLen = 8198
 
-// For OneFS releases up to and including 9.12, the API supports the System
-// dataset (0), and up to four user-defined datasets
+// MaxDsID is the maximum dataset ID supported by the API; for OneFS releases
+// up to and including 9.12, the API supports the System dataset (0) and up to
+// four user-defined datasets.
 const MaxDsID = 4
 
 // AuthInfo provides username and password to authenticate
@@ -216,7 +217,7 @@ func (c *Cluster) Authenticate() error {
 	if err != nil {
 		return fmt.Errorf("max retries exceeded for connect to %s, aborting connection attempt", c.Hostname)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	// 201(StatusCreated) is success
 	if resp.StatusCode != http.StatusCreated {
 		return fmt.Errorf("auth failed: %s", resp.Status)
@@ -229,7 +230,7 @@ func (c *Cluster) Authenticate() error {
 		return fmt.Errorf("unable to parse auth response: %s", err)
 	}
 	// drain any other output
-	io.Copy(io.Discard, resp.Body)
+	_, _ = io.Copy(io.Discard, resp.Body)
 	var timeout int
 	ta, ok := ar["timeout_absolute"]
 	if ok {
@@ -454,7 +455,7 @@ func (c *Cluster) restGet(endpoint string) ([]byte, error) {
 			if resp.StatusCode == http.StatusOK {
 				break
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			// check for need to re-authenticate (maybe we are talking to a different node)
 			if resp.StatusCode == http.StatusUnauthorized {
 				if c.AuthType == authtypeBasic {
@@ -487,7 +488,7 @@ func (c *Cluster) restGet(endpoint string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("cluster %s returned unexpected HTTP response: %v", c, resp.Status)
 	}
@@ -505,7 +506,7 @@ func (c *Cluster) newGetRequest(url string) (*http.Request, error) {
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Content-Type", "application/json")
 	if c.AuthType == authtypeBasic {
-		req.SetBasicAuth(c.AuthInfo.Username, c.AuthInfo.Password)
+		req.SetBasicAuth(c.Username, c.Password)
 	}
 	if c.csrfToken != "" {
 		// Must be newer session-based auth with CSRF protection

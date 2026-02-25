@@ -190,7 +190,7 @@ func (h *httpSdConf) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 ]`
-	w.Write([]byte(sdstr1 + listenAddrs + sdstr2))
+	_, _ = w.Write([]byte(sdstr1 + listenAddrs + sdstr2))
 }
 
 // Start an http listener in a goroutine to server Prometheus HTTP SD requests
@@ -237,10 +237,10 @@ func homepage(w http.ResponseWriter, r *http.Request) {
 </body>
 </html>`
 
-	fmt.Fprintf(w, "%s", description)
+	_, _ = fmt.Fprintf(w, "%s", description)
 }
 
-// Connect() sets up the HTTP server and handlers for Prometheus
+// Connect sets up the HTTP server and handlers for Prometheus.
 func (p *PrometheusClient) Connect() error {
 	addr := fmt.Sprintf(":%d", p.ListenPort)
 
@@ -332,7 +332,7 @@ func (s *PrometheusSink) ClearDataset(id int) {
 	delete(s.dsm, id)
 }
 
-// UpdatesDatasets updates the back end view of the current dataset definitions
+// UpdateDatasets updates the back end view of the current dataset definitions.
 func (s *PrometheusSink) UpdateDatasets(di *DsInfo) {
 	if s.dsm == nil {
 		// First time through so allocate and set up the maps and gauges
@@ -383,11 +383,12 @@ func (s *PrometheusSink) UpdateDatasets(di *DsInfo) {
 	}
 }
 
+// Description returns a human-readable description of the Prometheus sink configuration.
 func (s *PrometheusSink) Description() string {
 	return "Configuration for the Prometheus client to spawn"
 }
 
-// Implements the prometheus.Collector interface
+// Describe implements the prometheus.Collector interface.
 func (s *PrometheusSink) Describe(ch chan<- *prometheus.Desc) {
 	prometheus.NewGauge(prometheus.GaugeOpts{Name: "Dummy", Help: "Dummy"}).Describe(ch)
 }
@@ -489,7 +490,7 @@ func (s *PrometheusSink) addMetricFamily(sample *Sample, mname string, desc stri
 	addSample(fam, sample, sampleID)
 }
 
-// WriteStats takes an array of PPStatResults and "writes" them to Prometheus
+// WritePPStats takes an array of PPStatResults and "writes" them to Prometheus
 // (in the case of Prometheus, this means adding them to the data exposed via http
 // that the Prometheus server will scrape)
 func (s *PrometheusSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) error {
