@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"strings"
@@ -93,6 +94,24 @@ type clusterConf struct {
 	PreserveCase   *bool   `toml:"preserve_case"`   // Overwrite normalization of Cluster Name
 }
 
+// validateConfigVersion checks the version of the config file to ensure that it is
+// compatible with this version of the collector
+// If not, it is a fatal error
+func validateConfigVersion(confVersion string) {
+	if confVersion == "" {
+		die("The collector requires a versioned config file (see the example config)")
+	}
+	v := strings.TrimLeft(confVersion, "vV")
+	switch v {
+	// last breaking change was moving logging config from [global] to [logging] in v0.29
+	case "0.29", "0.30":
+		return
+	}
+	die("Config file version is not compatible with this collector version",
+		slog.String("config_version", confVersion),
+		slog.String("collector_version", Version))
+}
+
 func mustReadConfig(configFileName string) tomlConfig {
 	var conf tomlConfig
 	conf.Global.MaxRetries = defaultMaxRetries
@@ -105,6 +124,8 @@ func mustReadConfig(configFileName string) tomlConfig {
 		fmt.Fprintf(os.Stderr, "%s: failed to read config file %s\nError: %v\nExiting\n", os.Args[0], configFileName, err.Error())
 		os.Exit(1)
 	}
+	// Validate config version
+	validateConfigVersion(conf.Global.Version)
 	// If retries is 0 or negative, make it effectively infinite
 	if conf.Global.MaxRetries <= 0 {
 		conf.Global.MaxRetries = math.MaxInt

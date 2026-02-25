@@ -6,13 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 	"sync"
 	"time"
 )
 
 // Version is the released program version
-const Version = "0.29"
+const Version = "0.30"
 const userAgent = "goppstats/" + Version
 
 // The partitioned performance statistics on the cluster are only updated
@@ -36,24 +35,6 @@ const (
 func die(msg string, args ...any) {
 	log.Log(context.Background(), LevelFatal, msg, args...)
 	os.Exit(1)
-}
-
-// validateConfigVersion checks the version of the config file to ensure that it is
-// compatible with this version of the collector
-// If not, it is a fatal error
-func validateConfigVersion(confVersion string) {
-	if confVersion == "" {
-		die("The collector requires a versioned config file (see the example config)")
-	}
-	v := strings.TrimLeft(confVersion, "vV")
-	switch v {
-	// last breaking change was moving logging config from [global] to [logging] in v0.29
-	case "0.29":
-		return
-	}
-	die("Config file version is not compatible with this collector version",
-		slog.String("config_version", confVersion),
-		slog.String("collector_version", Version))
 }
 
 func main() {
@@ -81,8 +62,6 @@ func main() {
 
 	// announce ourselves
 	log.Log(context.Background(), LevelNotice, "Starting goppstats", slog.String("version", Version))
-
-	validateConfigVersion(conf.Global.Version)
 
 	if conf.Global.Processor == promPluginName && conf.PromSD.Enabled {
 		if err := startPromSdListener(conf); err != nil {
