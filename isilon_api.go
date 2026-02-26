@@ -5,14 +5,13 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"syscall"
@@ -417,19 +416,9 @@ func parsePPStatResult(res []byte) ([]PPStatResult, error) {
 	return workloads.Workloads, nil
 }
 
-// isConnectionRefused unwraps the layers of errors from an http call to determine if
-// the underlying error was "connection refused"
+// isConnectionRefused checks if the given error is a connection refused error
 func isConnectionRefused(err error) bool {
-	if uerr, ok := err.(*url.Error); ok {
-		if nerr, ok := uerr.Err.(*net.OpError); ok {
-			if oerr, ok := nerr.Err.(*os.SyscallError); ok {
-				if oerr.Err == syscall.ECONNREFUSED {
-					return true
-				}
-			}
-		}
-	}
-	return false
+	return errors.Is(err, syscall.ECONNREFUSED)
 }
 
 // restGet returns the REST response for the given endpoint from the API
