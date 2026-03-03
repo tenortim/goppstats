@@ -25,7 +25,7 @@ func GetInfluxDBWriter() DBWriter {
 }
 
 // Init initializes an InfluxDBSink so that points can be written
-func (s *InfluxDBSink) Init(cluster *Cluster, config *tomlConfig, ci int) error {
+func (s *InfluxDBSink) Init(ctx context.Context, cluster *Cluster, config *tomlConfig, ci int) error {
 	s.clusterName = cluster.ClusterName
 	s.cluster = cluster
 	var username, password string
@@ -60,7 +60,7 @@ func (s *InfluxDBSink) Init(cluster *Cluster, config *tomlConfig, ci int) error 
 	if err != nil {
 		return fmt.Errorf("failed to ping InfluxDB: %w", err)
 	}
-	log.Log(context.Background(), LevelNotice, "successfully connected to InfluxDB",
+	log.Log(ctx, LevelNotice, "successfully connected to InfluxDB",
 		slog.String("response", response),
 		slog.Duration("response_time", responseTime))
 	s.client = dbClient
@@ -74,7 +74,7 @@ func (s *InfluxDBSink) UpdateDatasets(di *DsInfo) {
 }
 
 // WritePPStats takes an array of PPStatResults and writes them to InfluxDB.
-func (s *InfluxDBSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) error {
+func (s *InfluxDBSink) WritePPStats(ctx context.Context, ds DsInfoEntry, ppstats []PPStatResult) error {
 	keyName := ds.StatKey
 
 	bp, err := client.NewBatchPoints(s.bpConfig)
@@ -85,7 +85,7 @@ func (s *InfluxDBSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) erro
 		fields := fieldsForPPStat(ppstat)
 		log.Debug("got fields", slog.Any("fields", fields))
 
-		tags := tagsForPPStat(ppstat, s.cluster, s.exports)
+		tags := tagsForPPStat(ctx, ppstat, s.cluster, s.exports)
 		tags["cluster"] = s.clusterName
 		tags["node"] = strconv.Itoa(ppstat.Node)
 		log.Debug("got tags", slog.Any("tags", tags))

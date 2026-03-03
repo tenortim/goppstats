@@ -2,16 +2,19 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 )
 
 // Version is the released program version
-const Version = "0.30"
+const Version = "0.31"
 const userAgent = "goppstats/" + Version
 
 // PPSampleRate is the poll interval in seconds; PP stats are only updated once every thirty seconds.
@@ -59,11 +62,15 @@ func main() {
 	// set up full logging
 	setupLogging(conf.Logging, *logLevel, *logFileName)
 
+	// create a context that is cancelled on SIGTERM or SIGINT
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
+
 	// announce ourselves
-	log.Log(context.Background(), LevelNotice, "Starting goppstats", slog.String("version", Version))
+	log.Log(ctx, LevelNotice, "Starting goppstats", slog.String("version", Version))
 
 	if conf.Global.Processor == promPluginName && conf.PromSD.Enabled {
-		if err := startPromSdListener(conf); err != nil {
+		if err := startPromSdListener(ctx, conf); err != nil {
 			log.Error("Failed to start Prometheus SD listener", slog.Any("error", err))
 		}
 	}
@@ -79,7 +86,7 @@ func main() {
 		go func(ci int, cl clusterConf) {
 			log.Info("spawning collection loop for cluster", slog.String("cluster", cl.Hostname))
 			defer wg.Done()
-			statsloop(&conf, ci)
+			statsloop(ctx, &conf, ci)
 			log.Info("collection loop for cluster ended", slog.String("cluster", cl.Hostname))
 		}(ci, cl)
 	}
@@ -87,7 +94,7 @@ func main() {
 	log.Log(context.Background(), LevelNotice, "All collectors complete - exiting")
 }
 
-func statsloop(config *tomlConfig, ci int) {
+func statsloop(ctx context.Context, config *tomlConfig, ci int) {
 	var err error
 	var password string
 	var ss DBWriter // ss = stats sink
@@ -141,8 +148,10 @@ func statsloop(config *tomlConfig, ci int) {
 		maxRetries:   gc.MaxRetries,
 		PreserveCase: preserveCase,
 	}
-	if err = c.Connect(); err != nil {
-		log.Error("Connection to cluster failed", slog.String("cluster", c.Hostname), slog.Any("error", err))
+	if err = c.Connect(ctx); err != nil {
+		if !errors.Is(err, context.Canceled) {
+			log.Error("Connection to cluster failed", slog.String("cluster", c.Hostname), slog.Any("error", err))
+		}
 		return
 	}
 	log.Info("Connected to cluster", slog.String("cluster", c.ClusterName), slog.String("version", c.OSVersion))
@@ -153,7 +162,7 @@ func statsloop(config *tomlConfig, ci int) {
 		log.Error("unsupported backend plugin", slog.Any("error", err))
 		return
 	}
-	err = ss.Init(c, config, ci)
+	err = ss.Init(ctx, c, config, ci)
 	if err != nil {
 		log.Error("Unable to initialize plugin", slog.String("plugin", gc.Processor), slog.Any("error", err))
 		return
@@ -167,11 +176,13 @@ func statsloop(config *tomlConfig, ci int) {
 
 		// Grab current dataset definitions
 		log.Info("Querying initial PP stat datasets for cluster", slog.String("cluster", c.ClusterName))
-		di, err := c.GetDataSetInfo()
+		di, err := c.GetDataSetInfo(ctx)
 		if err != nil {
-			log.Error("Unable to retrieve dataset information for cluster",
-				slog.String("cluster", c.ClusterName),
-				slog.Any("error", err))
+			if !errors.Is(err, context.Canceled) {
+				log.Error("Unable to retrieve dataset information for cluster",
+					slog.String("cluster", c.ClusterName),
+					slog.Any("error", err))
+			}
 			return
 		}
 		log.Info("Got data set definitions", slog.Int("count", di.Total))
@@ -195,9 +206,12 @@ func statsloop(config *tomlConfig, ci int) {
 				slog.String("cluster", c.ClusterName),
 				slog.String("dataset", dsName))
 			for {
-				sr, err = c.GetPPStats(dsName)
+				sr, err = c.GetPPStats(ctx, dsName)
 				if err == nil {
 					break
+				}
+				if errors.Is(err, context.Canceled) {
+					return
 				}
 				readFailCount++
 				log.Error("Failed to retrieve PP stats",
@@ -206,7 +220,12 @@ func statsloop(config *tomlConfig, ci int) {
 					slog.Any("error", err),
 					slog.Int("retry", readFailCount),
 					slog.Duration("retry_in", retryTime))
-				time.Sleep(retryTime)
+				select {
+				case <-time.After(retryTime):
+				case <-ctx.Done():
+					log.Log(ctx, LevelNotice, "shutting down stats collection", slog.String("cluster", c.ClusterName))
+					return
+				}
 				if retryTime < maxRetryTime {
 					retryTime *= 2
 				}
@@ -217,15 +236,23 @@ func statsloop(config *tomlConfig, ci int) {
 			// write PP stats, now with retries
 			retryTime = time.Second * time.Duration(gc.ProcessorRetryIntvl)
 			for i := 1; i <= gc.ProcessorMaxRetries; i++ {
-				err = ss.WritePPStats(ds, sr)
+				err = ss.WritePPStats(ctx, ds, sr)
 				if err == nil {
 					break
+				}
+				if errors.Is(err, context.Canceled) {
+					return
 				}
 				log.Error("write error, retrying",
 					slog.Any("error", err),
 					slog.Int("retry", i),
 					slog.Duration("retry_in", retryTime))
-				time.Sleep(retryTime)
+				select {
+				case <-time.After(retryTime):
+				case <-ctx.Done():
+					log.Log(ctx, LevelNotice, "shutting down stats collection", slog.String("cluster", c.ClusterName))
+					return
+				}
 				if retryTime < maxRetryTime {
 					retryTime *= 2
 				}
@@ -238,7 +265,12 @@ func statsloop(config *tomlConfig, ci int) {
 
 		curTime = time.Now()
 		if curTime.Before(nextTime) {
-			time.Sleep(nextTime.Sub(curTime))
+			select {
+			case <-time.After(nextTime.Sub(curTime)):
+			case <-ctx.Done():
+				log.Log(ctx, LevelNotice, "shutting down stats collection", slog.String("cluster", c.ClusterName))
+				return
+			}
 		}
 	}
 }

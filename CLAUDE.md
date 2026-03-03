@@ -58,13 +58,17 @@ One goroutine is spawned per enabled cluster. The poll interval is fixed at 30 s
 All backends implement:
 ```go
 type DBWriter interface {
-    Init(cluster *Cluster, config *tomlConfig, ci int) error
+    Init(ctx context.Context, cluster *Cluster, config *tomlConfig, ci int) error
     UpdateDatasets(di *DsInfo)
-    WritePPStats(ds DsInfoEntry, stats []PPStatResult) error
+    WritePPStats(ctx context.Context, ds DsInfoEntry, stats []PPStatResult) error
 }
 ```
 
 The backend is selected by `stats_processor` in the config (`"influxdb"`, `"influxdbv2"`, `"prometheus"`, `"discard"`).
+
+### Graceful Shutdown
+
+`main()` creates a context via `signal.NotifyContext` that is cancelled on SIGINT or SIGTERM. This context is threaded through the entire call stack. All blocking waits (retry sleeps, end-of-cycle sleep) use `select` on both a timer and `ctx.Done()` so the process exits promptly on signal. The Prometheus HTTP servers (per-cluster metrics and optional SD listener) each have a shutdown goroutine that calls `server.Shutdown` with a 5-second timeout when `ctx.Done()` fires.
 
 ### Prometheus Backend Notes
 
@@ -75,7 +79,7 @@ The backend is selected by `stats_processor` in the config (`"influxdb"`, `"infl
 
 ### Configuration
 
-Config is TOML. The version field in `[global]` is checked for compatibility (supported: 0.29+). Secrets can reference environment variables via `$env:VARNAME` syntax in any string field. See `example_goppstats.toml` for all available options.
+Config is TOML. The version field in `[global]` is checked for compatibility (supported: 0.29–0.31). Secrets can reference environment variables via `$env:VARNAME` syntax in any string field. See `example_goppstats.toml` for all available options.
 
 Logging is configured in a `[logging]` section:
 - `logfile` — path to log file (optional)

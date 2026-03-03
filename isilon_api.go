@@ -170,7 +170,7 @@ func (c *Cluster) String() string {
 
 // Authenticate authenticates to the cluster using the session API endpoint
 // and saves the cookies needed to authenticate subsequent requests
-func (c *Cluster) Authenticate() error {
+func (c *Cluster) Authenticate(ctx context.Context) error {
 	var err error
 	var resp *http.Response
 
@@ -197,7 +197,7 @@ func (c *Cluster) Authenticate() error {
 	var req *http.Request
 	retrySecs := 1
 	for i := 1; i <= c.maxRetries; i++ {
-		req, err = http.NewRequest(http.MethodPost, u.String(), bytes.NewBuffer(b))
+		req, err = http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewBuffer(b))
 		if err != nil {
 			return err
 		}
@@ -208,7 +208,11 @@ func (c *Cluster) Authenticate() error {
 			break
 		}
 		log.Warn("Authentication request failed, retrying", slog.Any("error", err), slog.Int("retry_in_seconds", retrySecs))
-		time.Sleep(time.Duration(retrySecs) * time.Second)
+		select {
+		case <-time.After(time.Duration(retrySecs) * time.Second):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 		retrySecs *= 2
 		if retrySecs > maxTimeoutSecs {
 			retrySecs = maxTimeoutSecs
@@ -267,9 +271,9 @@ func (c *Cluster) Authenticate() error {
 
 // GetClusterConfig pulls information from the cluster config API
 // endpoint, including the actual cluster name
-func (c *Cluster) GetClusterConfig() error {
+func (c *Cluster) GetClusterConfig(ctx context.Context) error {
 	var v any
-	resp, err := c.restGet(configPath)
+	resp, err := c.restGet(ctx, configPath)
 	if err != nil {
 		return err
 	}
@@ -304,25 +308,25 @@ func (c *Cluster) GetClusterConfig() error {
 
 // Connect establishes the initial network connection to the cluster,
 // then pulls the cluster config info to get the real cluster name
-func (c *Cluster) Connect() error {
+func (c *Cluster) Connect(ctx context.Context) error {
 	if err := c.initialize(); err != nil {
 		return fmt.Errorf("initialize: %w", err)
 	}
 	if c.AuthType == authtypeSession {
-		if err := c.Authenticate(); err != nil {
+		if err := c.Authenticate(ctx); err != nil {
 			return fmt.Errorf("authenticate: %w", err)
 		}
 	}
-	if err := c.GetClusterConfig(); err != nil {
+	if err := c.GetClusterConfig(ctx); err != nil {
 		return fmt.Errorf("get cluster config: %w", err)
 	}
 	return nil
 }
 
 // GetDataSetInfo returns info on each of the defined data sets on the cluster
-func (c *Cluster) GetDataSetInfo() (*DsInfo, error) {
+func (c *Cluster) GetDataSetInfo(ctx context.Context) (*DsInfo, error) {
 	var di DsInfo
-	res, err := c.restGet(dsPath)
+	res, err := c.restGet(ctx, dsPath)
 	if err != nil {
 		return nil, err
 	}
@@ -337,12 +341,12 @@ func (c *Cluster) GetDataSetInfo() (*DsInfo, error) {
 }
 
 // GetExportPathByID returns the first defined path for the given NFS export id or an error
-func (c *Cluster) GetExportPathByID(id int) (string, error) {
+func (c *Cluster) GetExportPathByID(ctx context.Context, id int) (string, error) {
 	// We only care about the paths component here, so ignore the rest
 	var exports any
 	url := fmt.Sprintf("%s/%d", exportPath, id)
 	log.Debug("fetching export info", slog.String("url", url))
-	res, err := c.restGet(url)
+	res, err := c.restGet(ctx, url)
 	if err != nil {
 		return "", err
 	}
@@ -380,12 +384,12 @@ func (c *Cluster) GetExportPathByID(id int) (string, error) {
 
 // GetPPStats queries the API for the specified Partitioned Performance data set and returns
 // an array of PPStatResult structures representing that set
-func (c *Cluster) GetPPStats(dsName string) ([]PPStatResult, error) {
+func (c *Cluster) GetPPStats(ctx context.Context, dsName string) ([]PPStatResult, error) {
 	var results []PPStatResult
 
 	basePath := ppWorkloadPath + "?degraded=true&nodes=all&dataset=" + dsName
 	log.Info("fetching PP stats from cluster", slog.String("cluster", c.String()))
-	resp, err := c.restGet(basePath)
+	resp, err := c.restGet(ctx, basePath)
 	if err != nil {
 		log.Error("Attempt to retrieve workload data failed",
 			slog.String("cluster", c.String()),
@@ -422,13 +426,13 @@ func isConnectionRefused(err error) bool {
 }
 
 // restGet returns the REST response for the given endpoint from the API
-func (c *Cluster) restGet(endpoint string) ([]byte, error) {
+func (c *Cluster) restGet(ctx context.Context, endpoint string) ([]byte, error) {
 	var err error
 	var resp *http.Response
 
 	if c.AuthType == authtypeSession && time.Now().After(c.reauthTime) {
 		log.Info("re-authenticating to cluster based on timer", slog.String("cluster", c.String()))
-		if err = c.Authenticate(); err != nil {
+		if err = c.Authenticate(ctx); err != nil {
 			return nil, err
 		}
 	}
@@ -437,7 +441,7 @@ func (c *Cluster) restGet(endpoint string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	req, err := c.newGetRequest(u.String())
+	req, err := c.newGetRequest(ctx, u.String())
 	if err != nil {
 		return nil, err
 	}
@@ -456,11 +460,11 @@ func (c *Cluster) restGet(endpoint string) ([]byte, error) {
 				if c.AuthType == authtypeBasic {
 					return nil, fmt.Errorf("basic authentication for cluster %s failed - check username and password", c)
 				}
-				log.Log(context.Background(), LevelNotice, "Session-based authentication to cluster failed, attempting to re-authenticate", slog.String("cluster", c.String()))
-				if err = c.Authenticate(); err != nil {
+				log.Log(ctx, LevelNotice, "Session-based authentication to cluster failed, attempting to re-authenticate", slog.String("cluster", c.String()))
+				if err = c.Authenticate(ctx); err != nil {
 					return nil, err
 				}
-				req, err = c.newGetRequest(u.String())
+				req, err = c.newGetRequest(ctx, u.String())
 				if err != nil {
 					return nil, err
 				}
@@ -474,7 +478,11 @@ func (c *Cluster) restGet(endpoint string) ([]byte, error) {
 			return nil, err
 		}
 		log.Error("Connection refused, retrying", slog.String("cluster", c.Hostname), slog.Int("retry_in_seconds", retrySecs))
-		time.Sleep(time.Duration(retrySecs) * time.Second)
+		select {
+		case <-time.After(time.Duration(retrySecs) * time.Second):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 		retrySecs *= 2
 		if retrySecs > maxTimeoutSecs {
 			retrySecs = maxTimeoutSecs
@@ -493,8 +501,8 @@ func (c *Cluster) restGet(endpoint string) ([]byte, error) {
 
 // newGetRequest returns a pointer to an http.Request initialized with the
 // appropriate headers including authentication
-func (c *Cluster) newGetRequest(url string) (*http.Request, error) {
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+func (c *Cluster) newGetRequest(ctx context.Context, url string) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}

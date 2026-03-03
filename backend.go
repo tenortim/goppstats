@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -93,7 +94,7 @@ func fieldsForPPStat(ppstat PPStatResult) ptFields {
 // match the original workload definition i.e.
 // export_id groupname local_address path protocol remote_address share_name username zone_name
 // squash some of the fields e.g. Username vs UserID vs UserSID
-func tagsForPPStat(ppstat PPStatResult, cluster *Cluster, exports exportMap) ptTags {
+func tagsForPPStat(ctx context.Context, ppstat PPStatResult, cluster *Cluster, exports exportMap) ptTags {
 	tags := make(ptTags)
 
 	// NFS export id
@@ -104,7 +105,7 @@ func tagsForPPStat(ppstat PPStatResult, cluster *Cluster, exports exportMap) ptT
 			path, found := exports.pathByID[id]
 			if !found {
 				var err error
-				path, err = cluster.GetExportPathByID(id)
+				path, err = cluster.GetExportPathByID(ctx, id)
 				if err != nil {
 					log.Error("failed to lookup export id", slog.Int("export_id", id), slog.Any("error", err))
 					path = "unknown (lookup failed)"

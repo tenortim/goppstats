@@ -27,7 +27,7 @@ func GetInfluxDBv2Writer() DBWriter {
 }
 
 // Init initializes an InfluxDBSink so that points can be written
-func (s *InfluxDBv2Sink) Init(cluster *Cluster, config *tomlConfig, ci int) error {
+func (s *InfluxDBv2Sink) Init(ctx context.Context, cluster *Cluster, config *tomlConfig, ci int) error {
 	s.clusterName = cluster.ClusterName
 	s.cluster = cluster
 	var err error
@@ -44,16 +44,16 @@ func (s *InfluxDBv2Sink) Init(cluster *Cluster, config *tomlConfig, ci int) erro
 	}
 	client := influxdb2.NewClient(url, token)
 	// ping the database to ensure we can connect
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	pingCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	ok, err := client.Ping(ctx)
+	ok, err := client.Ping(pingCtx)
 	if err != nil {
 		return fmt.Errorf("failed to ping InfluxDBv2: %w", err)
 	}
 	if !ok {
 		return fmt.Errorf("InfluxDBv2 ping failed - server not reachable")
 	}
-	log.Log(context.Background(), LevelNotice, "successfully connected to InfluxDBv2", slog.String("cluster", cluster.ClusterName))
+	log.Log(ctx, LevelNotice, "successfully connected to InfluxDBv2", slog.String("cluster", cluster.ClusterName))
 	s.c = client
 	s.writeAPI = client.WriteAPIBlocking(ic.Org, ic.Bucket)
 
@@ -67,7 +67,7 @@ func (s *InfluxDBv2Sink) UpdateDatasets(di *DsInfo) {
 }
 
 // WritePPStats takes an array of PPStatResults and writes them to InfluxDB.
-func (s *InfluxDBv2Sink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) error {
+func (s *InfluxDBv2Sink) WritePPStats(ctx context.Context, ds DsInfoEntry, ppstats []PPStatResult) error {
 	keyName := ds.StatKey
 
 	var pts []*write.Point
@@ -75,14 +75,14 @@ func (s *InfluxDBv2Sink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) er
 		fields := fieldsForPPStat(ppstat)
 		log.Debug("got fields", slog.Any("fields", fields))
 
-		tags := tagsForPPStat(ppstat, s.cluster, s.exports)
+		tags := tagsForPPStat(ctx, ppstat, s.cluster, s.exports)
 		tags["cluster"] = s.clusterName
 		tags["node"] = strconv.Itoa(ppstat.Node)
 		log.Debug("got tags", slog.Any("tags", tags))
 
 		pts = append(pts, influxdb2.NewPoint(keyName, tags, fields, time.Unix(ppstat.UnixTime, 0).UTC()))
 	}
-	if err := s.writeAPI.WritePoint(context.Background(), pts...); err != nil {
+	if err := s.writeAPI.WritePoint(ctx, pts...); err != nil {
 		return fmt.Errorf("InfluxDBv2 write failed: %w", err)
 	}
 	return nil

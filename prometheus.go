@@ -90,14 +90,14 @@ type MetricFamily struct {
 }
 
 // Wrapper to set socket reuse options
-func createListener(addr string) (net.Listener, error) {
+func createListener(ctx context.Context, addr string) (net.Listener, error) {
 	// Create Listener Config
 	lc := net.ListenConfig{
 		Control: Control,
 	}
 
 	// Start Listener
-	l, err := lc.Listen(context.Background(), "tcp", addr)
+	l, err := lc.Listen(ctx, "tcp", addr)
 	return l, err
 }
 
@@ -194,7 +194,7 @@ func (h *httpSdConf) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // Start an http listener in a goroutine to server Prometheus HTTP SD requests
-func startPromSdListener(conf tomlConfig) error {
+func startPromSdListener(ctx context.Context, conf tomlConfig) error {
 	var listenAddr string
 	var err error
 	listenAddr = conf.PromSD.ListenAddr
@@ -215,15 +215,22 @@ func startPromSdListener(conf tomlConfig) error {
 	mux := http.NewServeMux()
 	mux.Handle("/", &h)
 	addr := fmt.Sprintf(":%d", conf.PromSD.SDport)
-	listener, err := createListener(addr)
+	listener, err := createListener(ctx, addr)
 	if err != nil {
 		return fmt.Errorf("error creating listener for Prometheus HTTP SD: %w", err)
 	}
+	sdServer := &http.Server{Handler: mux}
 	log.Info("Starting Prometheus HTTP SD listener", slog.String("addr", addr))
 	go func() {
-		if err := http.Serve(listener, mux); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := sdServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("Prometheus HTTP SD listener error", slog.Any("error", err))
 		}
+	}()
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = sdServer.Shutdown(shutdownCtx)
 	}()
 	return nil
 }
@@ -241,7 +248,7 @@ func homepage(w http.ResponseWriter, r *http.Request) {
 }
 
 // Connect sets up the HTTP server and handlers for Prometheus.
-func (p *PrometheusClient) Connect() error {
+func (p *PrometheusClient) Connect(ctx context.Context) error {
 	addr := fmt.Sprintf(":%d", p.ListenPort)
 
 	mux := http.NewServeMux()
@@ -254,7 +261,7 @@ func (p *PrometheusClient) Connect() error {
 		Handler: mux,
 	}
 
-	listener, err := createListener(addr)
+	listener, err := createListener(ctx, addr)
 	if err != nil {
 		return fmt.Errorf("error creating listener for Prometheus client: %w", err)
 	}
@@ -271,12 +278,19 @@ func (p *PrometheusClient) Connect() error {
 		}
 	}()
 
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = p.server.Shutdown(shutdownCtx)
+	}()
+
 	return nil
 }
 
 // Init initializes an PrometheusSink so that points can be "written"
 // (which means exposed via http in the case of Prometheus)
-func (s *PrometheusSink) Init(cluster *Cluster, config *tomlConfig, ci int) error {
+func (s *PrometheusSink) Init(ctx context.Context, cluster *Cluster, config *tomlConfig, ci int) error {
 	s.clusterName = cluster.ClusterName
 	s.cluster = cluster
 	promconf := config.Prometheus
@@ -305,7 +319,7 @@ func (s *PrometheusSink) Init(cluster *Cluster, config *tomlConfig, ci int) erro
 	s.fam = make(map[string]*MetricFamily)
 
 	// Set up http server here
-	err := pc.Connect()
+	err := pc.Connect(ctx)
 
 	return err
 }
@@ -495,7 +509,7 @@ func (s *PrometheusSink) addMetricFamily(sample *Sample, mname string, desc stri
 // WritePPStats takes an array of PPStatResults and "writes" them to Prometheus
 // (in the case of Prometheus, this means adding them to the data exposed via http
 // that the Prometheus server will scrape)
-func (s *PrometheusSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) error {
+func (s *PrometheusSink) WritePPStats(ctx context.Context, ds DsInfoEntry, ppstats []PPStatResult) error {
 	// Currently only one thread writing at any one time, but let's protect ourselves
 	s.Lock()
 	defer s.Unlock()
@@ -505,7 +519,7 @@ func (s *PrometheusSink) WritePPStats(ds DsInfoEntry, ppstats []PPStatResult) er
 	dsi := s.dsm[ds.ID]
 	for _, ppstat := range ppstats {
 		fieldMap := fieldsForPPStat(ppstat)
-		tags := tagsForPPStat(ppstat, s.cluster, s.exports)
+		tags := tagsForPPStat(ctx, ppstat, s.cluster, s.exports)
 		sampleID := CreateSampleID(tags)
 		labels := make(prometheus.Labels)
 		labels["cluster"] = s.clusterName
