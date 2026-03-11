@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -37,9 +38,10 @@ type PrometheusClient struct {
 // Since Prometheus uses a pull model, this actually means it defines the data
 // to enable us to host a web page that the Prometheus server scrapes
 type PrometheusSink struct {
-	clusterName string
-	cluster     *Cluster // needed to enable per-cluster export id lookup
-	exports     exportMap
+	clusterName       string
+	instanceLabelName string
+	cluster           *Cluster // needed to enable per-cluster export id lookup
+	exports           exportMap
 
 	dsm    promDsMap
 	client PrometheusClient
@@ -172,25 +174,29 @@ type httpSdConf struct {
 	ListenPorts []uint64
 }
 
+// httpSdTarget is the JSON structure for a Prometheus HTTP SD target
+type httpSdTarget struct {
+	Targets []string          `json:"targets"`
+	Labels  map[string]string `json:"labels"`
+}
+
+// ServeHTTP implements the http.Handler interface for the Prometheus HTTP SD handler
 func (h *httpSdConf) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	var sb strings.Builder
-	sb.WriteString(`[
-	{
-		"targets": [`)
+	target := httpSdTarget{
+		Targets: make([]string, len(h.ListenPorts)),
+		Labels:  map[string]string{"__meta_prometheus_job": "isilon_ppstats"},
+	}
 	for i, port := range h.ListenPorts {
-		if i != 0 {
-			sb.WriteString(", ")
-		}
-		fmt.Fprintf(&sb, "\"%s:%d\"", h.ListenIP, port)
+		target.Targets[i] = fmt.Sprintf("%s:%d", h.ListenIP, port)
 	}
-	sb.WriteString(`],
-		"labels": {
-			"__meta_prometheus_job": "isilon_ppstats"
-		}
+	jsonBytes, err := json.Marshal([]httpSdTarget{target})
+	if err != nil {
+		log.Error("error encoding JSON response for HTTP SD", slog.String("error", err.Error()))
+		http.Error(w, "error encoding JSON response", http.StatusInternalServerError)
+		return
 	}
-]`)
-	_, _ = w.Write([]byte(sb.String()))
+	_, _ = w.Write(jsonBytes)
 }
 
 // Start an http listener in a goroutine to server Prometheus HTTP SD requests
@@ -293,6 +299,9 @@ func (p *PrometheusClient) Connect(ctx context.Context) error {
 func (s *PrometheusSink) Init(ctx context.Context, cluster *Cluster, config *tomlConfig, ci int) error {
 	s.clusterName = cluster.ClusterName
 	s.cluster = cluster
+	if config.Prometheus.InstanceLabelName != nil {
+		s.instanceLabelName = *config.Prometheus.InstanceLabelName
+	}
 	promconf := config.Prometheus
 	gc := config.Global
 	s.exports = newExportMap(gc.LookupExportIDs)
@@ -524,6 +533,16 @@ func (s *PrometheusSink) WritePPStats(ctx context.Context, ds DsInfoEntry, ppsta
 		labels := make(prometheus.Labels)
 		labels["cluster"] = s.clusterName
 		labels["node"] = strconv.Itoa(ppstat.Node)
+		// If instance_label_name is configured, stamp the Isilon cluster name
+		// under that label as well as the standard "cluster" label. This is
+		// useful in Kubernetes environments where a Prometheus external label
+		// named "cluster" identifies the Kubernetes cluster; Prometheus renames
+		// any pre-existing "cluster" label on scraped metrics to "exported_cluster",
+		// making direct filtering awkward. Choosing a non-conflicting label name
+		// (e.g. "isilon_cluster") preserves the Isilon identity without renaming.
+		if s.instanceLabelName != "" {
+			labels[s.instanceLabelName] = s.clusterName
+		}
 
 		// check for the "overflows" buckets
 		// "Pinned" is special. It is effectively a regular stat gather not a separate bucket.
