@@ -22,12 +22,12 @@ The partitioned performance workload data is available in the InfluxDB database 
      influx -host localhost -port 8086 -execute 'create database isi_data_insights'
      ```
 
-* Create a local user on each cluster and grant the required privileges (readonly ISI_PRIV_NFS is needed to enable NFS export id lookup):
+* Create a local user on each cluster and grant the required privileges (ISI_PRIV_PERFORMANCE for the performance dataset API, ISI_PRIV_STATISTICS for the statistics summary workload API, and readonly ISI_PRIV_NFS to enable NFS export id lookup):
 
     ```sh
     isi auth users create --email=ppstat.user@mydomain.com --enabled=true --name=ppstatsreader --password='s3kret_pass'
     isi auth roles create --name='PPStatsReader' --description='Role to allow reading of partitioned performance statistics via PAPI'
-    isi auth roles modify PPStatsReader --add-priv-ro=ISI_PRIV_LOGIN_PAPI --add-priv-ro=ISI_PRIV_PERFORMANCE --add-priv-ro=ISI_PRIV_NFS --add-user=ppstatsreader
+    isi auth roles modify PPStatsReader --add-priv-ro=ISI_PRIV_LOGIN_PAPI --add-priv-ro=ISI_PRIV_PERFORMANCE --add-priv-ro=ISI_PRIV_STATISTICS --add-priv-ro=ISI_PRIV_NFS --add-user=ppstatsreader
     ```
 
 * To run the connector:
