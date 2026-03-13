@@ -4,6 +4,7 @@ go 1.23.0
 
 require (
 	github.com/BurntSushi/toml v1.3.2
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/prometheus/client_golang v1.17.0
 	github.com/samber/slog-multi v1.6.0
 	golang.org/x/net v0.38.0

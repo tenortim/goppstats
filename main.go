@@ -14,7 +14,7 @@ import (
 )
 
 // Version is the released program version
-const Version = "0.31"
+const Version = "0.32"
 const userAgent = "goppstats/" + Version
 
 // PPSampleRate is the poll interval in seconds; PP stats are only updated once every thirty seconds.
@@ -62,36 +62,120 @@ func main() {
 	// set up full logging
 	setupLogging(conf.Logging, *logLevel, *logFileName)
 
-	// create a context that is cancelled on SIGTERM or SIGINT
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
-	defer stop()
+	// top-level context cancelled on SIGTERM or SIGINT
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigterm := make(chan os.Signal, 1)
+	signal.Notify(sigterm, syscall.SIGTERM, os.Interrupt)
+	defer signal.Stop(sigterm)
+
+	// Cancel the top-level context when SIGTERM/SIGINT arrives.
+	go func() {
+		select {
+		case <-sigterm:
+			log.Log(context.Background(), LevelNotice, "shutdown signal received")
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
+	// Unified reload channel: SIGHUP and the config file watcher both send here.
+	reload := make(chan struct{}, 1)
+
+	sighup := make(chan os.Signal, 1)
+	notifySIGHUP(sighup)
+	defer signal.Stop(sighup)
+	// Forward SIGHUP to the unified reload channel.
+	go func() {
+		for {
+			select {
+			case _, ok := <-sighup:
+				if !ok {
+					return
+				}
+				log.Log(ctx, LevelNotice, "SIGHUP received - reloading config")
+				select {
+				case reload <- struct{}{}:
+				default: // reload already pending; skip
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 
 	// announce ourselves
 	log.Log(ctx, LevelNotice, "Starting goppstats", slog.String("version", Version))
 
-	if conf.Global.Processor == promPluginName && conf.PromSD.Enabled {
-		if err := startPromSdListener(ctx, conf); err != nil {
-			log.Error("Failed to start Prometheus SD listener", slog.Any("error", err))
-		}
+	// Watch the config file for changes; feeds the same reload channel as SIGHUP.
+	if err := startConfigWatcher(ctx, *configFileName, reload); err != nil {
+		log.Warn("Config file watching not available", slog.String("error", err.Error()))
 	}
 
-	// start collecting from each defined and enabled cluster
-	var wg sync.WaitGroup
-	for ci, cl := range conf.Clusters {
-		if cl.Disabled {
-			log.Info("skipping disabled cluster", slog.String("cluster", cl.Hostname))
-			continue
+outer:
+	for {
+		// Create a per-run context so collectors can be cancelled independently
+		// of the top-level context (e.g. on SIGHUP reload).
+		runCtx, cancelRun := context.WithCancel(ctx)
+
+		if conf.Global.Processor == promPluginName && conf.PromSD.Enabled {
+			if err := startPromSdListener(runCtx, conf); err != nil {
+				log.Error("Failed to start Prometheus SD listener", slog.Any("error", err))
+			}
 		}
-		wg.Add(1)
-		go func(ci int, cl clusterConf) {
-			log.Info("spawning collection loop for cluster", slog.String("cluster", cl.Hostname))
-			defer wg.Done()
-			statsloop(ctx, &conf, ci)
-			log.Info("collection loop for cluster ended", slog.String("cluster", cl.Hostname))
-		}(ci, cl)
+
+		// start collecting from each defined and enabled cluster
+		var wg sync.WaitGroup
+		for ci, cl := range conf.Clusters {
+			if cl.Disabled {
+				log.Info("skipping disabled cluster", slog.String("cluster", cl.Hostname))
+				continue
+			}
+			wg.Add(1)
+			go func(ci int, cl clusterConf) {
+				log.Info("spawning collection loop for cluster", slog.String("cluster", cl.Hostname))
+				defer wg.Done()
+				statsloop(runCtx, &conf, ci)
+				log.Info("collection loop for cluster ended", slog.String("cluster", cl.Hostname))
+			}(ci, cl)
+		}
+
+		done := make(chan struct{})
+		go func() {
+			wg.Wait()
+			close(done)
+		}()
+
+		select {
+		case <-reload:
+			cancelRun()
+			<-done
+			// If SIGTERM raced with SIGHUP, honour the shutdown.
+			if ctx.Err() != nil {
+				break outer
+			}
+			newConf, err := readConfig(*configFileName)
+			if err != nil {
+				log.Error("Config reload failed, continuing with existing config",
+					slog.String("error", err.Error()))
+				// conf is unchanged; the loop restarts with the existing config
+			} else {
+				conf = newConf
+				setupLogging(conf.Logging, *logLevel, *logFileName)
+				log.Log(ctx, LevelNotice, "Config reloaded successfully")
+			}
+			continue
+		case <-done:
+			cancelRun()
+			break outer
+		case <-ctx.Done():
+			cancelRun()
+			<-done
+			break outer
+		}
 	}
-	wg.Wait()
-	log.Log(context.Background(), LevelNotice, "All collectors complete - exiting")
+	log.Log(ctx, LevelNotice, "All collectors complete - exiting")
 }
 
 func statsloop(ctx context.Context, config *tomlConfig, ci int) {

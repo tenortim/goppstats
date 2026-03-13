@@ -1,5 +1,72 @@
 # Changelog
 
+## v0.32 - Fri Mar 13 2026 -0700
+
+### New features
+
+- Add SIGHUP and config file watch-based config reload
+  - On SIGTERM/SIGINT the collector shuts down as before
+  - On SIGHUP (Unix) or when the config file is modified on disk (all platforms),
+    all running collectors are cancelled and restarted with the new configuration
+  - Config reload failures are logged and recovered from; the previous config
+    continues to be used until a valid config is available
+- Improve Prometheus HTTP SD JSON response
+  - Replace manual string-building with a proper struct and json.Marshal,
+    making the response correct by construction with proper error handling
+- Add optional `instance_label_name` config setting to the `[prometheus]` section
+  - Stamps a second copy of the Isilon cluster name under a configurable label name
+  - Useful in Kubernetes environments where a `cluster` external label would
+    otherwise cause Prometheus to rename the `cluster` metric label to `exported_cluster`
+
+### Bug fixes
+
+- Add missing `ISI_PRIV_STATISTICS` privilege to the recommended role setup
+  - The `/platform/10/statistics/summary/workload` endpoint requires this privilege
+    in addition to `ISI_PRIV_PERFORMANCE`
+
+## v0.31 - Tue Mar 03 09:14:46 2026 -0800
+
+### New features
+
+- Add context propagation and graceful SIGINT/SIGTERM shutdown
+  - All blocking operations (retry sleeps, end-of-cycle sleep) now respect
+    context cancellation and exit promptly on signal
+  - Prometheus HTTP servers (metrics and SD listener) shut down cleanly
+    with a 5-second timeout on SIGTERM/SIGINT
+
+### Bug fixes
+
+- Fix code review issues: error handling, concurrency, naming, and style
+- Fix golint issues: comments and naming
+- Simplify `isConnectionRefused` to use `errors.Is`
+
+## v0.30 - Wed Feb 25 11:38:50 2026 -0800
+
+### New features
+
+- Add goreleaser support for automated release builds
+
+### Bug fixes
+
+- Fix code review issues: correctness, naming, and error handling
+- Move `validateConfigVersion` to `config.go`
+
+## v0.29 - Thu Feb 19 12:42:38 2026 -0800
+
+### New features
+
+- Migrate logging from `op/go-logging` to `log/slog`
+  - Custom log levels (CRITICAL, NOTICE, TRACE) preserved
+  - Multi-handler fanout via `slog-multi` for simultaneous file and stdout logging
+- Add ping check to InfluxDB v1 and v2 `Init` routines
+- Add `-version` flag
+- Force `SO_REUSEADDR`/`SO_REUSEPORT` on Prometheus listener sockets
+
+### Bug fixes
+
+- Fix Windows build after socket reuseaddr change
+- Update dependencies (`golang.org/x/net`, `google.golang.org/protobuf`)
+
 ## v0.28 - Fri Jun 28 14:05:48 2024 -0700
 
 ### Bug fixes

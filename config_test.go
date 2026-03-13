@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"os/exec"
 	"testing"
 )
 
@@ -51,41 +50,30 @@ func TestSecretFromEnv(t *testing.T) {
 }
 
 func TestValidateConfigVersion_Valid(t *testing.T) {
-	valid := []string{"0.29", "0.30", "0.31", "v0.29", "V0.31"}
+	valid := []string{"0.29", "0.30", "0.31", "0.32", "v0.29", "V0.31"}
 	for _, v := range valid {
 		t.Run(v, func(t *testing.T) {
-			// Should not panic or exit
-			validateConfigVersion(v)
+			if err := validateConfigVersion(v); err != nil {
+				t.Errorf("unexpected error for valid version %q: %v", v, err)
+			}
 		})
 	}
 }
 
-// TestValidateConfigVersion_Invalid uses a subprocess to verify that
-// validateConfigVersion calls os.Exit(1) for bad version strings.
 func TestValidateConfigVersion_Invalid(t *testing.T) {
 	cases := []struct {
 		name    string
 		version string
-		envKey  string
 	}{
-		{"empty", "", "TEST_DIE_EMPTY"},
-		{"unsupported", "0.99", "TEST_DIE_UNSUPPORTED"},
+		{"empty", ""},
+		{"unsupported", "0.99"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if os.Getenv(tc.envKey) == "1" {
-				// We are the subprocess; exercise the die path and exit
-				validateConfigVersion(tc.version)
-				return
+			if err := validateConfigVersion(tc.version); err == nil {
+				t.Errorf("expected error for invalid version %q, got nil", tc.version)
 			}
-			cmd := exec.Command(os.Args[0], "-test.run=TestValidateConfigVersion_Invalid/"+tc.name)
-			cmd.Env = append(os.Environ(), tc.envKey+"=1")
-			err := cmd.Run()
-			if e, ok := err.(*exec.ExitError); ok && !e.Success() {
-				return // got an exit error — expected
-			}
-			t.Fatalf("expected non-zero exit for version %q, got: %v", tc.version, err)
 		})
 	}
 }
